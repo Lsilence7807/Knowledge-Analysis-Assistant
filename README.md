@@ -85,16 +85,16 @@
 
 ```mermaid
 flowchart LR
-  UI["web/index.html<br/>单页前端 + ECharts"] -->|HTTP / SSE| API["app/main.py<br/>FastAPI 装配点"]
-  API --> AG["app/agent.py<br/>LangGraph 多步编排"]
-  AG --> TL["app/tools.py<br/>LangChain @tool 注册表"]
-  AG --> LLM["app/llm.py<br/>LiteLLM 模型层（回退 / 成本）"]
-  TL --> DB["app/db.py<br/>sqlglot SQL 守卫"]
-  TL --> SB["app/sandbox.py<br/>RestrictedPython 沙箱"]
-  TL --> PV["app/providers/<br/>LlamaIndex 知识库 · Skill · MCP"]
+  UI["frontend/ (React + shadcn/ui)<br/>build → web/dist"] -->|HTTP / SSE| API["backend/app/main.py<br/>create_app() 装配点"]
+  API --> RT["api/routes/*<br/>端点 + Depends 依赖注入"]
+  RT --> SV["services/<br/>LangGraph 编排 · LiteLLM 模型层"]
+  SV --> TL["services/tools.py<br/>LangChain @tool 注册表"]
+  RT --> DB["core/db.py<br/>sqlglot 守卫"]
+  TL --> SB["services/sandbox.py<br/>RestrictedPython 沙箱"]
+  SV --> PV["providers/<br/>LlamaIndex 知识库 · Skill · MCP"]
   DB --> DK[("DuckDB<br/>数据集")]
   API --> ST[("SQLite<br/>SQLAlchemy 元数据")]
-  API --> EX["app/exec.py<br/>run_in_threadpool"]
+  API --> EX["core/exec.py<br/>run_in_threadpool"]
 ```
 
 ## 🚀 怎么跑
@@ -106,7 +106,9 @@ flowchart LR
 ```
 & .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 # 复现当前环境锁版本：pip install -r requirements.lock（requirements.txt 留给想装最新版本的人）
-& .\.venv\Scripts\python.exe -m uvicorn app.main:app --port 8017
+cd frontend; npm ci; npm run build; cd ..
+# 前端只构建一次；改完前端重跑这两条（v3.1 起前端是 React，产物落 web/dist）
+& .\.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir backend --port 8017
 # 起服务前先确认端口没被旧进程占着：Get-NetTCPConnection -LocalPort 8017 -State Listen
 # 页面：http://127.0.0.1:8017/ ；接口文档：/docs
 # 模型：在页面上填任意 OpenAI 兼容厂商的 base_url + 模型名 + 密钥（写本机 config/local.json，不进仓库）
@@ -115,23 +117,28 @@ flowchart LR
 质量门与验收（已完成阶段：MVP 七段 + P6 技能 + P7 知识库 + P8 MCP + P13 Agent + P15 沙箱与指标 + P17 流式 + P21 性能契约，快照 164 passed；与 `.github/workflows/ci.yml` 同口径。测试必须在真实文件系统里跑，沙箱内 `tmp_path` 不可写，见 `docs/代码台账.md` 的 K-017）：
 
 ```
-python -m ruff check app tests
-python -m ruff format --check app tests
+python -m ruff check backend/app tests
+python -m ruff format --check backend/app tests
 python -m pytest tests -q
+cd frontend; npm run lint; npx tsc --noEmit; npm run build
 ```
 
 ## 📁 项目结构
 
 ```
-app/            后端：路由、Agent 编排、工具注册表、SQL 守卫、沙箱、存储、执行器
-  providers/      知识库 / Skill / MCP 三个可插拔能力
-web/            单页前端（原生 HTML/JS + 本地 ECharts）
+```
+backend/app/    后端：api/routes 端点 · api/deps 依赖注入 · core 配置与守卫 · models ORM · schemas 边界模型 · services 业务（LangGraph 编排 / LiteLLM 模型层 / 检索 / 沙箱 / 报告）
+  providers/      知识库 / Skill / MCP / 数据源四个可插拔能力
+frontend/       前端源码（React + Vite + TS + shadcn/ui），构建产物落 web/dist
+web/dist/       前端构建产物（gitignore，服务从这里挂静态文件）
 config/         工具、指标口径、模型、MCP 配置（local.json 存本机密钥，不进仓库）
 skills/         示例技能包
-tests/          每个阶段一个测试文件（共 164 例）
+tests/          每个阶段一个测试文件（共 164 例，留在仓库根，验收命令不变）
 bench/          性能基线脚本与基线 JSON
 examples/       演示数据
+deploy/         多阶段镜像与 Caddy 反代 · docker-compose.yml 编排
 docs/           设计文档、台账、索引
+```
 ```
 
 ## 🛠️ 技术栈
@@ -140,18 +147,22 @@ docs/           设计文档、台账、索引
 | --- | --- |
 | 层 | 选型 |
 | --- | --- |
-| 语言 / Web | Python 3.12 · FastAPI + uvicorn · pydantic v2 |
+| 层 | 选型 |
+| --- | --- |
+| 后端骨架 | FastAPI 官方模板结构：`api/routes` + `api/deps.py` + `core` + `models` + `schemas` + `services` + `alembic` |
+| 语言 / Web | Python 3.12 · FastAPI + uvicorn · pydantic v2 · pydantic-settings |
+| 前端骨架 | React + Vite + TypeScript + Tailwind + shadcn/ui · TanStack Query/Router/Table · ECharts |
 | 数据 | DuckDB（分析）· SQLite + SQLAlchemy + Alembic（元数据）· pandas / numpy · pandera · ydata-profiling |
 | 模型 | LiteLLM（多厂商路由 / 回退 / 结构化输出 / embedding / 成本） |
 | Agent 与记忆 | LangGraph + SqliteSaver checkpointer |
 | 检索 | LlamaIndex + LanceDB（FTS5 关键词保留为降级） |
 | 工具 | LangChain `@tool` + langchain-mcp-adapters |
-| 前端 | 原生 HTML/JS + ECharts（本地 `web/vendor/`，离线可用；可选 Chainlit） |
-| 流式 | SSE（sse-starlette） |
+| 流式 | SSE（sse-starlette，前端接 AI SDK 传输层） |
 | 并发 | starlette `run_in_threadpool`，DuckDB 与 pandas 不阻塞事件循环 |
 | 观测 / 评测 | Langfuse · deepeval + Ragas |
 | 作业 / 调度 | huey（SQLite）· APScheduler |
-| 质量 | pytest · ruff · GitHub Actions |
+| 部署 | 多阶段 Dockerfile（node 构建前端 → python 运行时）· docker-compose · Caddy |
+| 质量 | pytest · ruff · eslint/prettier · GitHub Actions |
 
 ## 📈 性能契约
 
@@ -175,6 +186,8 @@ docs/           设计文档、台账、索引
 ## 🗺️ 路线图
 
 **已实现**：MVP 七段（P0–P5）+ P6 技能 + P7 知识库 + P8 MCP + P13 Agent + P15 沙箱与指标 + P17 流式 + P21 性能并发契约。
+
+**骨架整改（先做）**：后端按 FastAPI 官方模板的目录与依赖注入重排（`api/routes` + `api/deps.py` + `core` + `models` + `schemas` + `services` + Alembic），前端换成 React + Vite + shadcn/ui 骨架（流式与工具调用用现成组件，API 客户端由 `/openapi.json` 生成），部署补上多阶段镜像与 compose；验收命令与 164 例断言都不动。逐段范围见 `docs/系统总体设计.md` §5 的 F1 / F2 / F10。
 
 **框架化改造（进行中，先做）**：把自研实现换成现成框架，接口与验收命令不变——`LiteLLM`（模型层）→ `LangGraph`（Agent 与记忆）→ `LlamaIndex + LanceDB`（检索与向量）→ `SQLAlchemy + Alembic + pydantic-settings`（数据层）→ `sqlglot + RestrictedPython + itsdangerous`（守卫与认证）→ `Langfuse + deepeval`（观测与评测）→ `huey + Docling`（作业与文档）。逐段范围与验收见 `docs/系统总体设计.md` §5「框架化改造（F 段）」，模块映射见同文 §11。
 

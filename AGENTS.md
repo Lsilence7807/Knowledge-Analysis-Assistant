@@ -31,6 +31,7 @@
 - 注释与报错信息用中文，标识符用英文。
 
 ### 路径规则（新代码必须守，验收时抽查）
+- **v3.1 骨架改造（F1/F2）落地前**：本节与全文的 `app/...` 就是现在的位置；**落地后**一律读作 `backend/app/...`（`core/config.py` 仍是 `BASE_DIR` 的唯一锚点，届时 `BASE_DIR` 指向仓库根），抽查命令的路径参数改成 `backend/app config tests`，前端源码在 `frontend/`、构建产物在 `web/dist`（gitignore）。落地时同步改本节、`pyproject.toml`、`启动.cmd`、`.github/workflows/ci.yml` 与 `pyproject.toml` 注释里引用的路径。
 
 - 路径一律锚在 `app/config.py` 的 `BASE_DIR`（`Path(__file__).resolve().parent.parent`），**禁止依赖当前工作目录**。
 - 禁止硬编码绝对路径：盘符、`/Users/...`、`/home/...`、用户名、机器名、`%APPDATA%` 字面量都不许出现在代码与 `config/*.json` 里；桌面端的 `%APPDATA%` 只准出现在 `app/config.py` 那一个切换点（P12）。
