@@ -12,8 +12,9 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from app import config, db, llm, store, tools
+from app.core import config, db
 from app.main import app
+from app.services import llm, store, tools
 
 SAMPLE = pd.DataFrame({"region": ["华东", "华南", "华北"] * 4, "amount": [10, 11, 12] * 4})
 BIG = pd.DataFrame({"region": ["华东", "华南"] * 250, "amount": list(range(500))})

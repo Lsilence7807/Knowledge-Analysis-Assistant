@@ -4,7 +4,8 @@
 #       不出现 500、/ask 仍 200）、白名单外被拒并留痕、超时后子进程被回收
 # 阶段：P8 MCP 插件接入
 # 依赖：json、os、subprocess、sys、time、contextlib、tempfile、pandas、pytest、fastapi.testclient、
-#       app/config.py、app/db.py、app/store.py、app/tools.py、app/main.py、app/providers/mcp_client.py
+#       backend/app/core/config.py、backend/app/core/db.py、backend/app/services/store.py、
+#       backend/app/services/tools.py、backend/app/main.py、backend/app/providers/mcp_client.py
 from __future__ import annotations
 
 import json
@@ -20,9 +21,10 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from app import config, db, store, tools
+from app.core import config, db
 from app.main import app
 from app.providers import mcp_client
+from app.services import store, tools
 
 FIXTURE_SERVER = config.BASE_DIR / "tests" / "fixtures" / "mcp_echo_server.py"
 REPO_CONFIG = config.BASE_DIR / "config" / "mcp.json"

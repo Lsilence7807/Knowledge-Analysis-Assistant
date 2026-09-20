@@ -8,8 +8,9 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from app import config, db, store
+from app.core import config, db
 from app.main import app
+from app.services import store
 
 SAMPLE = pd.DataFrame(
     {

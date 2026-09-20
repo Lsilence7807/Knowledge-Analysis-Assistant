@@ -3,8 +3,9 @@
 #       反例：import os、写文件、联网、fork 子进程、双下划线逃逸、死循环超时、巨量输出、内存爆炸、语法错、
 #       空代码、数据集不存在、开关关闭降级、白名单外直调（K-023 口径）
 # 阶段：P15 沙箱代码执行与指标语义层
-# 依赖：json、time、contextlib、pytest、pandas、fastapi.testclient、app/config.py、app/db.py、app/main.py、
-#       app/metrics.py、app/sandbox.py、app/store.py、app/tools.py
+# 依赖：json、time、contextlib、pytest、pandas、fastapi.testclient、backend/app/core/config.py、
+#       backend/app/core/db.py、backend/app/main.py、backend/app/services/metrics.py、
+#       backend/app/services/sandbox.py、backend/app/services/store.py、backend/app/services/tools.py
 from __future__ import annotations
 
 import json
@@ -15,8 +16,9 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from app import config, db, metrics, sandbox, store, tools
+from app.core import config, db
 from app.main import app
+from app.services import metrics, sandbox, store, tools
 
 SAMPLE = pd.DataFrame({"region": ["华东", "华南", "华北"] * 4, "amount": [10, 11, 12] * 4})
 SUM_AMOUNT = 132  # (10+11+12)*4：断言沙箱算的就是这份数据，不是别的

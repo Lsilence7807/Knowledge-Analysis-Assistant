@@ -47,5 +47,5 @@ if errorlevel 1 (
 echo 正在启动，页面会自动打开；关掉这个窗口就停止服务。
 echo %URL%
 start "" %URL%
-".venv\Scripts\python.exe" -m uvicorn app.main:app --port %PORT%
+".venv\Scripts\python.exe" -m uvicorn app.main:app --app-dir backend --port %PORT%
 pause

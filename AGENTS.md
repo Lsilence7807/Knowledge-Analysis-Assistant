@@ -19,10 +19,10 @@
 - 每个新建文件开头必须有一段文件头注释，格式固定：
 
 ```
-# 文件：app/ingest.py
+# 文件：backend/app/services/ingest.py
 # 作用：把上传的 CSV/XLSX 清洗后落成 DuckDB 数据集，并生成数据画像
 # 阶段：P1 数据摄入
-# 依赖：pandas、duckdb、app/store.py
+# 依赖：pandas、duckdb、app/services/store.py
 ```
 
 - 公共函数用一行 docstring 写清「做什么 + 返回什么」。
@@ -31,15 +31,15 @@
 - 注释与报错信息用中文，标识符用英文。
 
 ### 路径规则（新代码必须守，验收时抽查）
-- **v3.1 骨架改造（F1/F2）落地前**：本节与全文的 `app/...` 就是现在的位置；**落地后**一律读作 `backend/app/...`（`core/config.py` 仍是 `BASE_DIR` 的唯一锚点，届时 `BASE_DIR` 指向仓库根），抽查命令的路径参数改成 `backend/app config tests`，前端源码在 `frontend/`、构建产物在 `web/dist`（gitignore）。落地时同步改本节、`pyproject.toml`、`启动.cmd`、`.github/workflows/ci.yml` 与 `pyproject.toml` 注释里引用的路径。
+- **v3.1 骨架改造（F1 后端骨架已落地）**：Python 代码在 `backend/app/`（`api/` 路由 + `core/` 配置与执行器 + `services/` 业务 + `providers/` 能力 + `schemas/` 边界模型），`pythonpath=["backend"]` 兜住所有 `import app.*`；前端源码在 `frontend/`（F2）、构建产物在 `web/dist`（gitignore）。
 
-- 路径一律锚在 `app/config.py` 的 `BASE_DIR`（`Path(__file__).resolve().parent.parent`），**禁止依赖当前工作目录**。
-- 禁止硬编码绝对路径：盘符、`/Users/...`、`/home/...`、用户名、机器名、`%APPDATA%` 字面量都不许出现在代码与 `config/*.json` 里；桌面端的 `%APPDATA%` 只准出现在 `app/config.py` 那一个切换点（P12）。
-- 新增配置、目录、基准文件的路径先加进 `app/config.py`，其它模块只从 `config` 取，不在模块里自己拼。
+- 路径一律锚在 `backend/app/core/config.py` 的 `BASE_DIR`（仓库根：`Path(__file__).resolve().parents[3]`），**禁止依赖当前工作目录**。
+- 禁止硬编码绝对路径：盘符、`/Users/...`、`/home/...`、用户名、机器名、`%APPDATA%` 字面量都不许出现在代码与 `config/*.json` 里；桌面端的 `%APPDATA%` 只准出现在 `backend/app/core/config.py` 那一个切换点（P12）。
+- 新增配置、目录、基准文件的路径先加进 `backend/app/core/config.py`，其它模块只从 `config` 取，不在模块里自己拼。
 - 测试夹具用 `Path(__file__).parent`，项目外的临时目录用 `tempfile`；不许假定 cwd 是项目根。
-- 起子进程显式给 `cwd`（范例：`app/providers/mcp_client.py` 给 `BASE_DIR`、`app/providers/skills.py` 给技能目录）。
-- 落库或回给用户的路径存**相对项目根的 posix 路径**（范例 `app/providers/kb.py:_relative`），不存运行时绝对路径。
-- 抽查命令（应无输出）：`rg -n --glob '!**/vendor/**' -g '!config/local.json' -e '[A-Za-z]:\\[^nrt]' -e '/Users/' -e '/home/' -e '%APPDATA%' app config tests`
+- 起子进程显式给 `cwd`（范例：`backend/app/providers/mcp_client.py` 给 `BASE_DIR`、`backend/app/providers/skills.py` 给技能目录）。
+- 落库或回给用户的路径存**相对项目根的 posix 路径**（范例 `backend/app/providers/kb.py:_relative`），不存运行时绝对路径。
+- 抽查命令（应无输出）：`rg -n --glob '!**/vendor/**' -g '!config/local.json' -e '[A-Za-z]:\\[^nrt]' -e '/Users/' -e '/home/' -e '%APPDATA%' backend/app config tests`
 - 换目录也要能跑：`cd $env:TEMP; & <仓库>\.venv\Scripts\python.exe -m pytest <仓库>\tests -q` 必须全绿。
 
 ## 2. 代码台账
@@ -57,7 +57,7 @@
 - 失败先分清是环境问题还是代码问题；缺依赖就去装，环境问题也算自己的。
 - 同一段连续两次同样的失败，说明方案错了：换一个方案，不叠加补丁。
 - 不顺手修无关 bug，发现了记进台账「已知问题」。
-- ponytail 要求的「可运行自检」在本仓库落在 `tests/test_p<段>.py`（pytest），不在 `app/` 里加 `demo()` / `if __name__ == "__main__"`。
+- ponytail 要求的「可运行自检」在本仓库落在 `tests/test_p<段>.py`（pytest），不在 `backend/app/` 里加 `demo()` / `if __name__ == "__main__"`。
 
 ## 4. 提交与推送
 

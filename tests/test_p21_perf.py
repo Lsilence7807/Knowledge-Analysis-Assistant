@@ -14,8 +14,8 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from app import config, db
-from app import exec as exec_pool
+from app.core import exec as exec_pool
+from app.core import config, db
 from app.main import app
 
 ROWS = 500_000

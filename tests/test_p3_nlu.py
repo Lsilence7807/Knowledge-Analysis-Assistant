@@ -11,8 +11,9 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from app import config, db, llm, models, store
+from app.core import config, db
 from app.main import app
+from app.services import llm, llm_models, store
 
 SAMPLE = pd.DataFrame({"region": ["华东", "华南", "华北"] * 7, "amount": [10, 11, 12] * 7})
 GOOD_SQL = "SELECT region, sum(amount) AS total FROM ds_d_test GROUP BY 1 ORDER BY 2 DESC"
@@ -184,7 +185,7 @@ def test_page_key_wins_over_env_and_takes_effect_immediately(client, monkeypatch
     local.write_text(json.dumps({"api_keys": {"local": "page-key"}}), encoding="utf-8")
     monkeypatch.setattr(config, "LOCAL_SETTINGS", local)
     monkeypatch.setattr(config, "LLM_API_KEY", "env-key")
-    assert config.api_key(models.resolve()) == "page-key"
+    assert config.api_key(llm_models.resolve()) == "page-key"
     monkeypatch.setattr(llm, "_complete", _reply(json.dumps({"sql": GOOD_SQL}), INSIGHT))
     assert client.post("/ask", json=QUESTION).json()["degraded"] == []
 
@@ -240,4 +241,4 @@ def test_page_added_provider_profile_is_used_by_ask(client, monkeypatch, tmp_pat
     assert body["degraded"] == []
     assert seen["model"] == "glm-4-flash"
     assert seen["base_url"] == "https://open.bigmodel.cn/api/paas/v4"
-    assert "my-glm" in [item["id"] for item in models.list_models()]
+    assert "my-glm" in [item["id"] for item in llm_models.list_models()]

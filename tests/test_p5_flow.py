@@ -10,8 +10,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app import config, llm, store
+from app.core import config
 from app.main import app
+from app.services import llm, store
 
 FIXTURE = Path(__file__).parent / "fixtures" / "dirty.csv"
 
