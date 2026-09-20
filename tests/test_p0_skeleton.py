@@ -27,7 +27,9 @@ def test_health_ok(client):
     assert response.json() == {"status": "ok"}
 
 
-def test_capabilities_all_false_at_p0(client):
+def test_capabilities_all_false_at_p0(client, monkeypatch):
+    # 本机可能已经配了密钥（页面写入或 setx），这里显式关掉：测的是「P0 阶段没有可用能力」，不是「这台机器没密钥」
+    monkeypatch.setattr(config, "api_key", lambda: "")
     response = client.get("/capabilities")
     assert response.status_code == 200
     body = response.json()
