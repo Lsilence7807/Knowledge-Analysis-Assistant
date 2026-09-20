@@ -1,14 +1,15 @@
 # 文件：app/tools.py
-# 作用：Agent 可调用工具的注册表与 6 个只读工具（run_sql / describe_stats / detect_anomalies /
-#       list_skills / use_skill / search_kb）
+# 作用：Agent 可调用工具的注册表与 8 个只读工具（run_sql / describe_stats / detect_anomalies /
+#       list_skills / use_skill / search_kb / list_metrics / run_code）
 # 阶段：P13 Agent 循环与工具调用（K-006：每步超时按 tools.json 透传给 db.describe；
-#       K-023：白名单校验收进 call()，不再只靠 agent 那层；P6 加 list_skills / use_skill；P7 加 search_kb）
-# 依赖：json、app/config.py、app/db.py、app/store.py
+#       K-023：白名单校验收进 call()，不再只靠 agent 那层；P6 加 list_skills / use_skill；P7 加 search_kb；
+#       P15 加 list_metrics 与 run_code（沙箱））
+# 依赖：json、app/config.py、app/db.py、app/metrics.py、app/store.py
 from __future__ import annotations
 
 import json
 
-from app import config, db, registry, store
+from app import config, db, metrics, registry, store
 
 KINDS = ("read", "write")
 DEFAULT_SETTINGS: dict = {
@@ -191,6 +192,38 @@ register(
         "type": "object",
         "properties": {"query": {"type": "string", "description": "关键词，中文整串即可"}},
         "required": ["query"],
+    },
+    "read",
+)
+
+
+def _list_metrics(dataset_id: str = "") -> dict:
+    """列出已定义的指标口径（id、名称、别名、公式、单位与口径说明）；提问里的指标名要先在这里对上号。"""
+    return {"definitions": metrics.definitions()}
+
+
+def _sandbox_module():
+    """取沙箱能力；ENABLE_SANDBOX 关闭时 registry 返回 None，这里换成可读的拒绝（P15 退化路径）。"""
+    module = registry.get("sandbox")
+    if module is None:
+        raise ToolError("代码沙箱未启用（要 ENABLE_SANDBOX=true），本次不能执行代码")
+    return module
+
+
+def _run_code(code: str = "", dataset_id: str = "") -> dict:
+    """在受限沙箱里跑一段 pandas 代码：当前数据集的只读副本注入为 df，结果放 result 变量即回传输出。"""
+    return _sandbox_module().run_code(code, dataset_id=dataset_id)
+
+
+# 指标不碰数据集，沙箱自带 dataset_id 注入，两个都按 §4.8 算 read 类
+register("list_metrics", _list_metrics, {"type": "object", "properties": {}}, "read")
+register(
+    "run_code",
+    _run_code,
+    {
+        "type": "object",
+        "properties": {"code": {"type": "string", "description": "只读计算用的 pandas 代码，结果放 result 变量"}},
+        "required": ["code"],
     },
     "read",
 )

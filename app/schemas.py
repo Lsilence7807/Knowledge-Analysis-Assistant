@@ -1,6 +1,6 @@
 # 文件：app/schemas.py
 # 作用：HTTP 边界的 pydantic 模型，接口契约以本文件为准
-# 阶段：P0 骨架与契约冻结（P4 加 Insight，K-013 加请求体模型，K-009 给 Finding 加引用字段）
+# 阶段：P0 骨架与契约冻结（P4 加 Insight，K-013 加请求体模型，K-009 给 Finding 加引用字段，P15 加 SandboxIn）
 # 依赖：pydantic
 from __future__ import annotations
 
@@ -78,3 +78,10 @@ class InsightIn(BaseModel):
     dataset_id: str
     sql: str
     question: str = ""
+
+
+class SandboxIn(BaseModel):
+    """POST /sandbox/run 请求体：要执行的 pandas 代码；dataset_id 非空时把该数据集只读副本注入为 df。"""
+
+    code: str
+    dataset_id: str = ""

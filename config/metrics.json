@@ -1,0 +1,31 @@
+{
+  "definitions": [
+    {
+      "id": "sales_amount",
+      "name": "销售额",
+      "aliases": ["销售额", "营收", "GMV", "销售金额"],
+      "formula_sql": "sum(amount)",
+      "unit": "元",
+      "owner": "运营",
+      "note": "不含退货"
+    },
+    {
+      "id": "order_count",
+      "name": "订单量",
+      "aliases": ["订单量", "订单数", "单量"],
+      "formula_sql": "count(*)",
+      "unit": "单",
+      "owner": "运营",
+      "note": "按订单行计数"
+    },
+    {
+      "id": "avg_order_value",
+      "name": "客单价",
+      "aliases": ["客单价", "平均订单金额"],
+      "formula_sql": "sum(amount) / count(*)",
+      "unit": "元",
+      "owner": "运营",
+      "note": "分母不含退货订单"
+    }
+  ]
+}

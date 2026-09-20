@@ -2,7 +2,8 @@
 # 作用：HTTP 路由与编排，唯一装配点；禁止在此出现 pandas 调用与 SQL 字符串
 # 阶段：P0 骨架与契约冻结（P1 加数据集路由，P2 加查询路由，P3 加提问路由，P13 加 /tools 与 agent 路径，
 #       P4 加 /insight 并把结论并入 /ask，P5 加静态前端与 /settings/models；A 类补丁加 /ask 落 tasks 与
-#       DELETE /datasets/{id}，K-013 四个路由换 pydantic 请求体，P6 加 /skills，P7 加 /kb/*）
+#       DELETE /datasets/{id}，K-013 四个路由换 pydantic 请求体，P6 加 /skills，P7 加 /kb/*，
+#       P15 加 /sandbox/run 与 /metrics/definitions）
 # 依赖：FastAPI、app/{agent,config,db,ingest,insight,llm,models,nlu,store,tools}.py
 from __future__ import annotations
 
@@ -15,8 +16,8 @@ from uuid import uuid4
 from fastapi import Body, FastAPI, File, HTTPException, UploadFile
 from fastapi.staticfiles import StaticFiles
 
-from app import agent, config, db, ingest, insight, llm, models, nlu, registry, store, tools
-from app.schemas import AskIn, CapabilitiesOut, HealthOut, InsightIn, QueryIn, StatsIn
+from app import agent, config, db, ingest, insight, llm, metrics, models, nlu, registry, store, tools
+from app.schemas import AskIn, CapabilitiesOut, HealthOut, InsightIn, QueryIn, SandboxIn, StatsIn
 
 
 @asynccontextmanager
@@ -351,6 +352,30 @@ def _public_model(model: dict) -> dict:
         "model": model.get("model"),
         "has_key": bool(config.api_key(model)),
     }
+
+
+@app.post("/sandbox/run")
+def sandbox_run(payload: SandboxIn) -> dict:
+    """受限执行一段 pandas 代码：dataset_id 非空就把它只读注入为 df；未启用 503，代码被拒 400。"""
+    module = _sandbox_capability()
+    try:
+        return module.run_code(payload.code, dataset_id=payload.dataset_id)
+    except module.SandboxError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _sandbox_capability():
+    """取沙箱能力；开关关闭时 registry 返回 None，换成可读的 503（与 /capabilities 口径一致）。"""
+    module = registry.get("sandbox")
+    if module is None:
+        raise HTTPException(status_code=503, detail="代码沙箱未启用：设 ENABLE_SANDBOX=true 再重启服务")
+    return module
+
+
+@app.get("/metrics/definitions")
+def metrics_definitions() -> dict:
+    """指标口径清单（config/metrics.json 原文）；未定义的说法归 tools 标注，这里不编公式。"""
+    return {"definitions": metrics.definitions()}
 
 
 # 静态前端必须挂在最后：Mount("/") 会兜住所有未匹配路径，排在 API 路由之前会把它们全抢走
