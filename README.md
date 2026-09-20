@@ -19,7 +19,7 @@
 # 模型：在页面上填任意 OpenAI 兼容厂商的 base_url + 模型名 + 密钥（写本机 config/local.json，不进仓库）
 ```
 
-质量门与验收（已完成阶段：MVP 七段 + P21 性能契约 + 台账补丁，快照 86 passed；与 `.github/workflows/ci.yml` 同口径。测试必须在真实文件系统里跑，沙箱内 `tmp_path` 不可写，见 `docs/代码台账.md` 的 K-017）：
+质量门与验收（已完成阶段：MVP 七段 + P21 性能契约 + P6 技能 + 台账补丁，快照 101 passed；与 `.github/workflows/ci.yml` 同口径。测试必须在真实文件系统里跑，沙箱内 `tmp_path` 不可写，见 `docs/代码台账.md` 的 K-017）：
 
 ```
 python -m ruff check app tests
