@@ -85,16 +85,16 @@
 
 ```mermaid
 flowchart LR
-  UI["web/index.html<br/>单页前端 + ECharts"] -->|HTTP / SSE| API["app/main.py<br/>FastAPI · 23 个端点"]
-  API --> AG["app/agent.py<br/>多步编排 · 步数 / 超时 / 截断"]
-  AG --> TL["app/tools.py<br/>工具注册表 · JSON Schema"]
-  AG --> LLM["app/llm.py<br/>模型接入"]
-  TL --> DB["app/db.py<br/>SQL 守卫"]
-  TL --> SB["app/sandbox.py<br/>受限代码执行"]
-  TL --> PV["app/providers/<br/>知识库 · Skill · MCP"]
+  UI["web/index.html<br/>单页前端 + ECharts"] -->|HTTP / SSE| API["app/main.py<br/>FastAPI 装配点"]
+  API --> AG["app/agent.py<br/>LangGraph 多步编排"]
+  AG --> TL["app/tools.py<br/>LangChain @tool 注册表"]
+  AG --> LLM["app/llm.py<br/>LiteLLM 模型层（回退 / 成本）"]
+  TL --> DB["app/db.py<br/>sqlglot SQL 守卫"]
+  TL --> SB["app/sandbox.py<br/>RestrictedPython 沙箱"]
+  TL --> PV["app/providers/<br/>LlamaIndex 知识库 · Skill · MCP"]
   DB --> DK[("DuckDB<br/>数据集")]
-  API --> ST[("SQLite<br/>元数据 · FTS5 索引")]
-  API --> EX["app/exec.py<br/>统一阻塞执行器"]
+  API --> ST[("SQLite<br/>SQLAlchemy 元数据")]
+  API --> EX["app/exec.py<br/>run_in_threadpool"]
 ```
 
 ## 🚀 怎么跑
@@ -138,12 +138,19 @@ docs/           设计文档、台账、索引
 
 | 层 | 选型 |
 | --- | --- |
-| 语言 / Web | Python 3.11+ · FastAPI + uvicorn · pydantic v2 |
-| 数据 | DuckDB（分析）· SQLite（元数据 + FTS5 检索索引）· pandas / numpy |
-| 模型 | openai / anthropic SDK，兼容任意 OpenAI 兼容端点；工具调用走模型原生 function calling，自建注册表不引 agent 框架 |
-| 前端 | 原生 HTML/JS + ECharts（本地 `web/vendor/`，离线可用） |
-| 流式 | SSE（Server-Sent Events） |
-| 并发 | 自建 `run_blocking` 线程池执行器，DuckDB 与 pandas 不阻塞事件循环 |
+| 层 | 选型 |
+| --- | --- |
+| 语言 / Web | Python 3.12 · FastAPI + uvicorn · pydantic v2 |
+| 数据 | DuckDB（分析）· SQLite + SQLAlchemy + Alembic（元数据）· pandas / numpy · pandera · ydata-profiling |
+| 模型 | LiteLLM（多厂商路由 / 回退 / 结构化输出 / embedding / 成本） |
+| Agent 与记忆 | LangGraph + SqliteSaver checkpointer |
+| 检索 | LlamaIndex + LanceDB（FTS5 关键词保留为降级） |
+| 工具 | LangChain `@tool` + langchain-mcp-adapters |
+| 前端 | 原生 HTML/JS + ECharts（本地 `web/vendor/`，离线可用；可选 Chainlit） |
+| 流式 | SSE（sse-starlette） |
+| 并发 | starlette `run_in_threadpool`，DuckDB 与 pandas 不阻塞事件循环 |
+| 观测 / 评测 | Langfuse · deepeval + Ragas |
+| 作业 / 调度 | huey（SQLite）· APScheduler |
 | 质量 | pytest · ruff · GitHub Actions |
 
 ## 📈 性能契约
@@ -169,6 +176,8 @@ docs/           设计文档、台账、索引
 
 **已实现**：MVP 七段（P0–P5）+ P6 技能 + P7 知识库 + P8 MCP + P13 Agent + P15 沙箱与指标 + P17 流式 + P21 性能并发契约。
 
+**框架化改造（进行中，先做）**：把自研实现换成现成框架，接口与验收命令不变——`LiteLLM`（模型层）→ `LangGraph`（Agent 与记忆）→ `LlamaIndex + LanceDB`（检索与向量）→ `SQLAlchemy + Alembic + pydantic-settings`（数据层）→ `sqlglot + RestrictedPython + itsdangerous`（守卫与认证）→ `Langfuse + deepeval`（观测与评测）→ `huey + Docling`（作业与文档）。逐段范围与验收见 `docs/系统总体设计.md` §5「框架化改造（F 段）」，模块映射见同文 §11。
+
 **未开工**（设计已定，按 `docs/系统总体设计.md` §5 施工）：
 
 - P9 多模型适配器 · 按用途分级 · 失败回退
@@ -180,7 +189,7 @@ docs/           设计文档、台账、索引
 - P18 后台作业 · P19 报告导出（Word / PPT）
 - P22 多表关系推断 · P23 企业数据源只读同步 · P24 反馈与配额
 
-**明确不做**：模型微调 / 自训练、K8s 与多租户 RBAC、自研向量检索引擎与 embedding、扫描件 OCR、移动端适配。
+**明确不做**：模型微调 / 自训练、K8s 与多租户 RBAC、自研向量检索引擎与 embedding、自研 agent 循环 / 评测 / 观测框架（这三类直接用 LangGraph / deepeval / Langfuse）、扫描件 OCR、移动端适配。
 
 ## 🤝 参与贡献 · 📄 许可
 
