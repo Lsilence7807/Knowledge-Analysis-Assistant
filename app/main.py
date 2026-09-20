@@ -1,12 +1,13 @@
 # 文件：app/main.py
 # 作用：HTTP 路由与编排，唯一装配点；禁止在此出现 pandas 调用与 SQL 字符串
-# 阶段：P0 骨架与契约冻结（P1 加数据集路由，P2 加查询路由，P3 加提问路由，P13 加 /tools 与 agent 路径，P4 加 /insight 并把结论并入 /ask，P5 加静态前端与 /settings/models；A 类补丁加 /ask 落 tasks 与 DELETE /datasets/{id}，K-013 四个路由换 pydantic 请求体）
+# 阶段：P0 骨架与契约冻结（P1 加数据集路由，P2 加查询路由，P3 加提问路由，P13 加 /tools 与 agent 路径，
+#       P4 加 /insight 并把结论并入 /ask，P5 加静态前端与 /settings/models；A 类补丁加 /ask 落 tasks 与
+#       DELETE /datasets/{id}，K-013 四个路由换 pydantic 请求体）
 # 依赖：FastAPI、app/{agent,config,db,ingest,insight,llm,models,nlu,store,tools}.py
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from dataclasses import asdict
-
 from pathlib import Path
 from uuid import uuid4
 
@@ -197,17 +198,19 @@ def ask(payload: AskIn) -> dict:
     body = _attach_insight(body, question, dataset)
     # K-005：Agent 路径原本不写 tasks，提问历史只留在响应里；这里落一行，degraded 也记进去
     degraded = body.get("degraded") or []
-    store.insert_task({
-        "id": body.get("task_id"),
-        "dataset_id": dataset_id,
-        "session_id": session_id,
-        "kind": "ask",
-        "question": question,
-        "sql": body.get("sql") or "",
-        "degraded": degraded,
-        # message 在成功时是模型的收尾说明，只有降级时它才是错误原因，别混进 error 列
-        "error": (body.get("message") or "") if degraded else "",
-    })
+    store.insert_task(
+        {
+            "id": body.get("task_id"),
+            "dataset_id": dataset_id,
+            "session_id": session_id,
+            "kind": "ask",
+            "question": question,
+            "sql": body.get("sql") or "",
+            "degraded": degraded,
+            # message 在成功时是模型的收尾说明，只有降级时它才是错误原因，别混进 error 列
+            "error": (body.get("message") or "") if degraded else "",
+        }
+    )
     return body
 
 

@@ -33,13 +33,8 @@ def test_dirty_csv_is_cleaned_and_profiled(client):
     assert body["table"].startswith("ds_")
     assert body["rows"] == 3
     assert body["table_version"] == 1
-    assert [column["name"] for column in body["profile"]["columns"]] == [
-        "name", "amount", "date", "note", "empty"
-    ]
-    assert any(
-        column["name"] == "amount" and "int" in column["dtype"].lower()
-        for column in body["profile"]["columns"]
-    )
+    assert [column["name"] for column in body["profile"]["columns"]] == ["name", "amount", "date", "note", "empty"]
+    assert any(column["name"] == "amount" and "int" in column["dtype"].lower() for column in body["profile"]["columns"])
     profile = client.get(f"/datasets/{body['dataset_id']}/profile")
     assert profile.status_code == 200
     assert profile.json()["rows"] == 3
@@ -95,7 +90,10 @@ def test_delete_dataset_removes_table_metadata_and_source_file(client, tmp_path)
     response = client.delete(f"/datasets/{dataset_id}")
     assert response.status_code == 200, response.text
     assert response.json() == {
-        "dataset_id": dataset_id, "table": body["table"], "deleted": True, "removed_source": True,
+        "dataset_id": dataset_id,
+        "table": body["table"],
+        "deleted": True,
+        "removed_source": True,
     }
     assert client.get("/datasets").json() == []
     assert client.get(f"/datasets/{dataset_id}/profile").status_code == 404

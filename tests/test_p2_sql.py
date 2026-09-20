@@ -50,8 +50,13 @@ def _make_dataset(frame: pd.DataFrame, dataset_id: str = "d_test") -> str:
     table = db.register_table(dataset_id, frame)
     store.insert_dataset(
         {
-            "id": dataset_id, "name": "t.csv", "table_name": table, "rows": len(frame),
-            "cols": len(frame.columns), "profile_json": "{}", "clean_log": "[]",
+            "id": dataset_id,
+            "name": "t.csv",
+            "table_name": table,
+            "rows": len(frame),
+            "cols": len(frame.columns),
+            "profile_json": "{}",
+            "clean_log": "[]",
             "table_version": 1,
         }
     )
@@ -132,8 +137,7 @@ def test_result_over_limit_is_truncated_with_hint(client):
 def test_timeout_interrupts_and_service_survives(client):
     _make_dataset(SAMPLE)
     slow = (
-        "WITH RECURSIVE t AS (SELECT 1 AS i UNION ALL SELECT i + 1 FROM t WHERE i < 1000000000) "
-        "SELECT count(*) FROM t"
+        "WITH RECURSIVE t AS (SELECT 1 AS i UNION ALL SELECT i + 1 FROM t WHERE i < 1000000000) SELECT count(*) FROM t"
     )
     with pytest.raises(db.SQLRejected) as rejected:
         db.exec_sql(slow, timeout_s=1)

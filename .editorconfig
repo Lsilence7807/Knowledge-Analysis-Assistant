@@ -1,0 +1,18 @@
+# 文件：.editorconfig
+# 作用：统一换行、编码与缩进（此前 git 每次提交都报 LF/CRLF 警告）
+# 阶段：P0 起（2026-09-20 落地）
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+indent_style = space
+indent_size = 4
+
+[*.{json,html,yml,yaml}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false

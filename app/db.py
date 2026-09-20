@@ -149,15 +149,17 @@ def describe(dataset_id: str, columns: list[str] | None = None) -> dict:
             "missing": int(series.isna().sum()),
         }
         if pd.api.types.is_numeric_dtype(series) and series.notna().any():
-            item.update({
-                "min": _number(series.min()),
-                "q25": _number(series.quantile(0.25)),
-                "median": _number(series.median()),
-                "q75": _number(series.quantile(0.75)),
-                "max": _number(series.max()),
-                "mean": _number(series.mean()),
-                "std": _number(series.std()),
-            })
+            item.update(
+                {
+                    "min": _number(series.min()),
+                    "q25": _number(series.quantile(0.25)),
+                    "median": _number(series.median()),
+                    "q75": _number(series.quantile(0.75)),
+                    "max": _number(series.max()),
+                    "mean": _number(series.mean()),
+                    "std": _number(series.std()),
+                }
+            )
             anomalies.extend(_outliers(column, series))
         stats.append(item)
     return {
@@ -188,12 +190,14 @@ def _outliers(column: str, series) -> list[dict]:
         if std and std > 0 and abs(value - mean) / std > 3:
             reasons.append("z-score 超过 3")
         if reasons:
-            hits.append({
-                "column": column,
-                "row_hint": f"第 {index + 1} 行",
-                "value": _number(value),
-                "reason": "；".join(reasons),
-            })
+            hits.append(
+                {
+                    "column": column,
+                    "row_hint": f"第 {index + 1} 行",
+                    "value": _number(value),
+                    "reason": "；".join(reasons),
+                }
+            )
     return hits
 
 

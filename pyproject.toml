@@ -1,0 +1,20 @@
+# 文件：pyproject.toml
+# 作用：质量门的唯一配置源——ruff（静态检查 + 格式化）与 pytest（验收命令）；工具由 功能介绍与技术栈.md §3 指定
+# 阶段：P0 起（2026-09-20 落地）
+# 依赖：ruff、pytest（开发期依赖，见 requirements.txt）
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120          # 跟现有代码的行宽一致，避免整仓库重排
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "BLE"]
+ignore = ["B008"]          # FastAPI 的 File(...) / Body(...) 写在默认参数里是标准写法，不是可变默认值
+
+[tool.ruff.lint.per-file-ignores]
+# 提示词模板里的 JSON 示例是 P4 契约的一部分，按行拆会改动提示词内容
+"app/insight.py" = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

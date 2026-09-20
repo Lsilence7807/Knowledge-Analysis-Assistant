@@ -48,9 +48,9 @@ def _user_prompt(question: str, profile: dict, context: list[str]) -> str:
     lines = [
         f"表名：{profile.get('table', '')}",
         f"规模：{profile.get('rows', '?')} 行",
-        "列：" + "、".join(
-            f"{column.get('name')}({column.get('dtype')}，空值 {column.get('null_count', 0)})"
-            for column in columns
+        "列："
+        + "、".join(
+            f"{column.get('name')}({column.get('dtype')}，空值 {column.get('null_count', 0)})" for column in columns
         ),
         f"问题：{question}",
     ]

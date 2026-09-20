@@ -1,0 +1,5 @@
+# 文件：.gitattributes
+# 作用：仓库内文本文件统一 LF，消掉每次提交的 LF/CRLF 警告
+# 阶段：P0 起（2026-09-20 落地）
+
+* text=auto eol=lf

@@ -119,9 +119,7 @@ def _normalize_columns(columns) -> list[str]:
 def _infer_types(frame: pd.DataFrame, clean_log: list[str]) -> pd.DataFrame:
     for column in frame.select_dtypes(include=["object", "string"]).columns:
         values = frame[column].astype("string").str.strip()
-        numeric_values = pd.to_numeric(
-            values.str.replace(r"[,$￥\s]", "", regex=True), errors="coerce"
-        )
+        numeric_values = pd.to_numeric(values.str.replace(r"[,$￥\s]", "", regex=True), errors="coerce")
         present = values.notna() & values.ne("")
         if present.any() and numeric_values[present].notna().mean() >= 0.8:
             numeric_present = numeric_values[present].dropna()

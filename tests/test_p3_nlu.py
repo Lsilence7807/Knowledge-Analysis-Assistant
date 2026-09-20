@@ -60,12 +60,22 @@ def _make_dataset(frame: pd.DataFrame, dataset_id: str = "d_test") -> str:
     table = db.register_table(dataset_id, frame)
     store.insert_dataset(
         {
-            "id": dataset_id, "name": "t.csv", "table_name": table, "rows": len(frame),
+            "id": dataset_id,
+            "name": "t.csv",
+            "table_name": table,
+            "rows": len(frame),
             "cols": len(frame.columns),
-            "profile_json": json.dumps({"rows": len(frame), "cols": len(frame.columns), "columns": [
-                {"name": name, "dtype": str(dtype), "null_count": 0} for name, dtype in frame.dtypes.items()
-            ]}),
-            "clean_log": "[]", "table_version": 1,
+            "profile_json": json.dumps(
+                {
+                    "rows": len(frame),
+                    "cols": len(frame.columns),
+                    "columns": [
+                        {"name": name, "dtype": str(dtype), "null_count": 0} for name, dtype in frame.dtypes.items()
+                    ],
+                }
+            ),
+            "clean_log": "[]",
+            "table_version": 1,
         }
     )
     return table
@@ -85,9 +95,7 @@ def _reply(*payloads: str):
 
 def test_ask_returns_result_table(client, with_key, monkeypatch):
     _make_dataset(SAMPLE)
-    monkeypatch.setattr(
-        llm, "_complete", _reply(json.dumps({"sql": GOOD_SQL, "reason": "按区域求和"}), INSIGHT)
-    )
+    monkeypatch.setattr(llm, "_complete", _reply(json.dumps({"sql": GOOD_SQL, "reason": "按区域求和"}), INSIGHT))
     response = client.post("/ask", json=QUESTION)
     assert response.status_code == 200
     body = response.json()
@@ -108,9 +116,7 @@ def test_ask_without_key_degrades_and_service_stays_usable(client, monkeypatch):
     assert body["sql"] == "" and body["rows"] == []
     assert "模型密钥" in body["message"] and "config/local.json" in body["message"]
     with closing(store.connect()) as conn:
-        row = conn.execute(
-            "SELECT status, degraded_json FROM tasks WHERE id = ?", (body["task_id"],)
-        ).fetchone()
+        row = conn.execute("SELECT status, degraded_json FROM tasks WHERE id = ?", (body["task_id"],)).fetchone()
     assert row["status"] == "degraded" and json.loads(row["degraded_json"]) == ["query:llm"]
     kept = client.post("/query", json={"sql": "SELECT count(*) AS n FROM ds_d_test"})
     assert kept.json()["rows"] == [[21]]
@@ -205,9 +211,11 @@ def test_page_added_provider_profile_is_used_by_ask(client, monkeypatch, tmp_pat
                 "default": "my-glm",
                 "models": [
                     {
-                        "id": "my-glm", "provider": "openai_compatible",
+                        "id": "my-glm",
+                        "provider": "openai_compatible",
                         "base_url": "https://open.bigmodel.cn/api/paas/v4",
-                        "model": "glm-4-flash", "api_key_env": "GLM_API_KEY",
+                        "model": "glm-4-flash",
+                        "api_key_env": "GLM_API_KEY",
                         "purpose": ["sql", "insight"],
                     }
                 ],

@@ -4,9 +4,9 @@
 # 依赖：标准库 sqlite3、app/config.py
 from __future__ import annotations
 
-import sqlite3
 import json
 import logging
+import sqlite3
 from contextlib import closing
 
 from app import config
@@ -56,9 +56,7 @@ def ensure_tables() -> None:
 def table_names() -> list[str]:
     """当前库里的表名，供自检与测试使用。"""
     with closing(connect()) as conn:
-        rows = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
-        ).fetchall()
+        rows = conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").fetchall()
     return [row["name"] for row in rows]
 
 
@@ -66,8 +64,17 @@ def insert_dataset(dataset: dict) -> None:
     """写入一个数据集的元数据。"""
     ensure_tables()
     fields = (
-        "id", "name", "source_id", "source_path", "table_name", "rows", "cols",
-        "profile_json", "clean_log", "table_version", "owner",
+        "id",
+        "name",
+        "source_id",
+        "source_path",
+        "table_name",
+        "rows",
+        "cols",
+        "profile_json",
+        "clean_log",
+        "table_version",
+        "owner",
     )
     values = [dataset.get(field) for field in fields]
     with closing(connect()) as conn:

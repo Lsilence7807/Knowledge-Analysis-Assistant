@@ -5,7 +5,8 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,8 @@ def get(name: str) -> Any:
         return None
     try:
         return factory()
-    except Exception as exc:
+    # 能力工厂可能因缺依赖或配置错抛任意异常，P0 契约要求这里降级成 None，不把错抛给调用方
+    except Exception as exc:  # noqa: BLE001
         logger.warning("能力 %s 不可用：%s", name, exc)
         return None
 

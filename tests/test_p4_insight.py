@@ -45,12 +45,22 @@ def _make_dataset(frame: pd.DataFrame, dataset_id: str = "d_test") -> str:
     table = db.register_table(dataset_id, frame)
     store.insert_dataset(
         {
-            "id": dataset_id, "name": "t.csv", "table_name": table, "rows": len(frame),
+            "id": dataset_id,
+            "name": "t.csv",
+            "table_name": table,
+            "rows": len(frame),
             "cols": len(frame.columns),
-            "profile_json": json.dumps({"rows": len(frame), "cols": len(frame.columns), "columns": [
-                {"name": name, "dtype": str(dtype), "null_count": 0} for name, dtype in frame.dtypes.items()
-            ]}),
-            "clean_log": "[]", "table_version": 1,
+            "profile_json": json.dumps(
+                {
+                    "rows": len(frame),
+                    "cols": len(frame.columns),
+                    "columns": [
+                        {"name": name, "dtype": str(dtype), "null_count": 0} for name, dtype in frame.dtypes.items()
+                    ],
+                }
+            ),
+            "clean_log": "[]",
+            "table_version": 1,
         }
     )
     return table

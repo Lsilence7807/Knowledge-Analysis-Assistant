@@ -80,9 +80,7 @@ def chat_tools(messages: list[dict], tools: list[dict], model_id: str | None = N
     """
     model = ensure_ready(model_id)
     client = _client(model)
-    response = client.chat.completions.create(
-        model=model["model"], messages=messages, tools=tools, tool_choice="auto"
-    )
+    response = client.chat.completions.create(model=model["model"], messages=messages, tools=tools, tool_choice="auto")
     message = response.choices[0].message
     calls: list[dict] = []
     for call in message.tool_calls or []:

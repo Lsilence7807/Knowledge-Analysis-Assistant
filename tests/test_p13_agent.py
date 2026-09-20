@@ -1,5 +1,6 @@
 # 文件：tests/test_p13_agent.py
-# 作用：P13 Agent 循环验收测试：多跳/单跳、步骤落库、白名单与异常、单步截断、回落 P3、/tools；A 类补丁加 tasks 落库（K-005）
+# 作用：P13 Agent 循环验收测试：多跳/单跳、步骤落库、白名单与异常、单步截断、回落 P3、/tools；
+#       A 类补丁加 tasks 落库（K-005）
 # 阶段：P13 Agent 循环与工具调用
 # 依赖：json、contextlib、pytest、pandas、fastapi.testclient、app.agent、app.llm、app.store、app.tools
 from __future__ import annotations
@@ -17,8 +18,8 @@ from app.main import app
 SAMPLE = pd.DataFrame({"region": ["华东", "华南", "华北"] * 4, "amount": [10, 11, 12] * 4})
 BIG = pd.DataFrame({"region": ["华东", "华南"] * 250, "amount": list(range(500))})
 QUESTION = {"dataset_id": "d_test", "question": "先找下降最多的产品，再按渠道拆开"}
-GOOD_SQL = 'SELECT region, sum(amount) AS total FROM ds_d_test GROUP BY 1 ORDER BY 2 DESC'
-SPLIT_SQL = 'SELECT region, count(*) AS n FROM ds_d_test GROUP BY 1'
+GOOD_SQL = "SELECT region, sum(amount) AS total FROM ds_d_test GROUP BY 1 ORDER BY 2 DESC"
+SPLIT_SQL = "SELECT region, count(*) AS n FROM ds_d_test GROUP BY 1"
 INSIGHT = json.dumps(
     {
         "summary": "华东区降幅最大，集中在直营",
@@ -53,12 +54,22 @@ def _make_dataset(frame: pd.DataFrame, dataset_id: str = "d_test") -> str:
     table = db.register_table(dataset_id, frame)
     store.insert_dataset(
         {
-            "id": dataset_id, "name": "t.csv", "table_name": table, "rows": len(frame),
+            "id": dataset_id,
+            "name": "t.csv",
+            "table_name": table,
+            "rows": len(frame),
             "cols": len(frame.columns),
-            "profile_json": json.dumps({"rows": len(frame), "cols": len(frame.columns), "columns": [
-                {"name": name, "dtype": str(dtype), "null_count": 0} for name, dtype in frame.dtypes.items()
-            ]}),
-            "clean_log": "[]", "table_version": 1,
+            "profile_json": json.dumps(
+                {
+                    "rows": len(frame),
+                    "cols": len(frame.columns),
+                    "columns": [
+                        {"name": name, "dtype": str(dtype), "null_count": 0} for name, dtype in frame.dtypes.items()
+                    ],
+                }
+            ),
+            "clean_log": "[]",
+            "table_version": 1,
         }
     )
     return table
@@ -101,7 +112,8 @@ def _reply(*payloads: str):
 def test_multi_hop_question_takes_two_steps(client, monkeypatch):
     _make_dataset(SAMPLE)
     monkeypatch.setattr(
-        llm, "chat_tools",
+        llm,
+        "chat_tools",
         _model(
             _call("run_sql", sql=GOOD_SQL),
             _call("run_sql", sql=SPLIT_SQL),
@@ -130,7 +142,8 @@ def test_single_hop_question_takes_one_step(client, monkeypatch):
 def test_steps_are_persisted_matching_response(client, monkeypatch):
     _make_dataset(SAMPLE)
     monkeypatch.setattr(
-        llm, "chat_tools",
+        llm,
+        "chat_tools",
         _model(_call("run_sql", sql=GOOD_SQL), _call("run_sql", sql=SPLIT_SQL), _final("两步拿到结论")),
     )
     body = client.post("/ask", json=QUESTION).json()
@@ -157,9 +170,7 @@ def test_ask_writes_task_row(client, monkeypatch):
         ).fetchall()
     assert len(rows) == 1
     row = rows[0]
-    assert (row["id"], row["dataset_id"], row["session_id"], row["kind"]) == (
-        body["task_id"], "d_test", "s_1", "ask"
-    )
+    assert (row["id"], row["dataset_id"], row["session_id"], row["kind"]) == (body["task_id"], "d_test", "s_1", "ask")
     assert row["question"] == QUESTION["question"] and row["sql"] == GOOD_SQL
     assert row["status"] == "ok" and json.loads(row["degraded_json"]) == [] and row["error"] == ""
 
@@ -168,7 +179,8 @@ def test_tool_outside_whitelist_is_refused_and_loop_continues(client, monkeypatc
     _make_dataset(SAMPLE)
     monkeypatch.setattr(tools, "settings", lambda: {**tools.DEFAULT_SETTINGS, "allow": ["run_sql"]})
     monkeypatch.setattr(
-        llm, "chat_tools",
+        llm,
+        "chat_tools",
         _model(_call("describe_stats"), _call("run_sql", sql=GOOD_SQL), _final("换白名单内的工具拿到了结果")),
     )
     body = client.post("/ask", json=QUESTION).json()
@@ -183,7 +195,8 @@ def test_tool_outside_whitelist_is_refused_and_loop_continues(client, monkeypatc
 def test_unknown_tool_name_does_not_crash(client, monkeypatch):
     _make_dataset(SAMPLE)
     monkeypatch.setattr(
-        llm, "chat_tools",
+        llm,
+        "chat_tools",
         _model(_call("drop_everything"), _call("run_sql", sql=GOOD_SQL), _final("换用 run_sql 重试后拿到了结果")),
     )
     response = client.post("/ask", json=QUESTION)
@@ -197,7 +210,8 @@ def test_budget_exhausted_returns_partial_steps(client, monkeypatch):
     _make_dataset(SAMPLE)
     monkeypatch.setattr(config, "AGENT_MAX_STEPS", 1)
     monkeypatch.setattr(
-        llm, "chat_tools",
+        llm,
+        "chat_tools",
         _model(_call("run_sql", sql=GOOD_SQL), _call("run_sql", sql=SPLIT_SQL), _final("来不及说完")),
     )
     response = client.post("/ask", json=QUESTION)
@@ -211,7 +225,8 @@ def test_budget_exhausted_returns_partial_steps(client, monkeypatch):
 def test_tool_error_marks_step_failed_and_keeps_200(client, monkeypatch):
     _make_dataset(SAMPLE)
     monkeypatch.setattr(
-        llm, "chat_tools",
+        llm,
+        "chat_tools",
         _model(_call("run_sql", sql="DROP TABLE ds_d_test"), _final("这个查询被守卫拒了")),
     )
     response = client.post("/ask", json=QUESTION)
@@ -259,9 +274,7 @@ def test_agent_disabled_falls_back_to_p3_single_hop(client, monkeypatch):
 
 def test_tools_route_lists_registry_and_whitelist(client):
     body = client.get("/tools").json()
-    assert [item["function"]["name"] for item in body["tools"]] == [
-        "describe_stats", "detect_anomalies", "run_sql"
-    ]
+    assert [item["function"]["name"] for item in body["tools"]] == ["describe_stats", "detect_anomalies", "run_sql"]
     assert body["allow"] == ["run_sql", "describe_stats", "detect_anomalies"]
     assert body["max_steps"] == 6 and body["max_rows_per_step"] == 200
     assert body["kinds"]["run_sql"] == "read"
