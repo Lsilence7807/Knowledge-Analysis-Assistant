@@ -1,7 +1,7 @@
 # 文件：backend/app/services/llm.py
-# 作用：唯一模型出入口：结构化 JSON 输出（内部按 provider 分支，P9 加厂商时只加分支）
-# 阶段：P3 自然语言转 SQL（chat_tools 留到 P13）
-# 依赖：json、openai、backend/app/core/config.py、backend/app/services/llm_models.py
+# 作用：唯一模型出入口——LiteLLM 管厂商/模型组/回退/重试/结构化输出；`LLM_BACKEND=direct` 回落原 OpenAI 单厂商路径
+# 阶段：F3 模型层换 LiteLLM（chat_json / chat_tools / stream_text 的契约与签名不变）
+# 依赖：json、litellm、openai、backend/app/core/config.py、backend/app/services/llm_models.py
 from __future__ import annotations
 
 import json
@@ -12,9 +12,12 @@ from app.services import llm_models
 RETRY = 1  # 输出不合契约时的重试次数，第二次仍不合契约就降级
 MAX_TEXT = 500  # 模型原文进报错与日志前的截断长度
 
+_router = None  # LiteLLM Router 缓存：配置变了按指纹重建（见 _get_router）
+_router_key = ""
+
 
 class LLMUnavailable(RuntimeError):
-    """模型这条路不可用（缺密钥、缺 profile、provider 不支持）。"""
+    """模型这条路不可用（缺密钥、缺 profile、direct 后端不支持的厂商）。"""
 
 
 class LLMError(RuntimeError):
@@ -29,8 +32,8 @@ def ensure_ready(model_id: str | None = None) -> dict:
             f"未配置模型密钥（profile {model.get('id')}）：在页面配一次，"
             "或写 config/local.json 的 api_keys，也可设该 profile 声明的环境变量"
         )
-    if model.get("provider") != "openai_compatible":
-        raise LLMUnavailable(f"暂不支持的 provider：{model.get('provider')}")
+    if config.LLM_BACKEND == "direct" and model.get("provider") != "openai_compatible":
+        raise LLMUnavailable(f"direct 后端只支持 openai_compatible：{model.get('provider')}")
     return model
 
 
@@ -59,17 +62,14 @@ def chat_json(system: str, user: str, schema: type, model_id: str | None = None)
 
 
 def _complete(messages: list[dict], model: dict) -> str:
-    """调用 OpenAI 兼容端点拿原始文本；唯一网络出口，测试直接替换它。"""
-    from openai import OpenAI
-
-    client = OpenAI(
-        api_key=config.api_key(model),
-        base_url=model.get("base_url"),
-        timeout=model.get("timeout_s", 30),
-        max_retries=0,  # 重试策略由 chat_json 统一管，这里不叠一层
-    )
-    response = client.chat.completions.create(
-        model=model["model"], messages=messages, response_format={"type": "json_object"}
+    """取原始文本的唯一网络出口；测试直接替换它（保持两参签名）。"""
+    if config.LLM_BACKEND == "direct":
+        return _direct_complete(messages, model)
+    response = _get_router().completion(
+        model=_group_name(model),
+        messages=messages,
+        response_format={"type": "json_object"},
+        num_retries=0,  # 重试策略由 chat_json 统一管，这里不叠一层
     )
     return response.choices[0].message.content or ""
 
@@ -80,9 +80,20 @@ def chat_tools(messages: list[dict], tools: list[dict], model_id: str | None = N
     arguments 已解析成 dict；模型给的不是合法 JSON 时当空参处理，由工具层报「参数不匹配」让它改。
     """
     model = ensure_ready(model_id)
-    client = _client(model)
-    response = client.chat.completions.create(model=model["model"], messages=messages, tools=tools, tool_choice="auto")
-    message = response.choices[0].message
+    if config.LLM_BACKEND == "direct":
+        message = (
+            _client(model)
+            .chat.completions.create(model=model["model"], messages=messages, tools=tools, tool_choice="auto")
+            .choices[0]
+            .message
+        )
+    else:
+        message = (
+            _get_router()
+            .completion(model=_group_name(model), messages=messages, tools=tools, tool_choice="auto", num_retries=0)
+            .choices[0]
+            .message
+        )
     calls: list[dict] = []
     for call in message.tool_calls or []:
         try:
@@ -102,15 +113,19 @@ def chat_tools(messages: list[dict], tools: list[dict], model_id: str | None = N
 async def stream_text(system: str, user: str, model_id: str | None = None):
     """流式取模型文本：逐段 yield 增量；调用失败抛 LLMError（不重试——吐出去的片段收不回来）。
 
-    设计里的「流式回调」落成异步生成器：调用方 async for 增量取片段，断连时取消协程能真把上游请求掐掉，
-    这是这里用异步客户端而不是同步客户端的原因。
+    流式必须用异步客户端：断连时 Starlette 取消协程能真把上游请求掐掉。
     """
     model = ensure_ready(model_id)
     messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
     try:
-        stream = await _client(model, async_=True).chat.completions.create(
-            model=model["model"], messages=messages, stream=True
-        )
+        if config.LLM_BACKEND == "direct":
+            stream = await _client(model, async_=True).chat.completions.create(
+                model=model["model"], messages=messages, stream=True
+            )
+        else:
+            stream = await _get_router().acompletion(
+                model=_group_name(model), messages=messages, stream=True, num_retries=0
+            )
         async for chunk in stream:
             piece = (chunk.choices[0].delta.content or "") if chunk.choices else ""
             if piece:
@@ -119,11 +134,46 @@ async def stream_text(system: str, user: str, model_id: str | None = None):
         raise LLMError(f"模型调用失败：{_clip(exc)}") from exc
 
 
-def _client(model: dict, async_: bool = False):
-    """建 OpenAI 兼容客户端；_complete 里的旧副本按阶段隔离规则不动，新代码走这里。
+def _get_router():
+    """按当前 profile 与密钥建 LiteLLM Router（组内挑、失败按回退链走），配置变了自动重建。"""
+    import hashlib
+    import json as _json
 
-    async_=True 给 SSE 路径：断连时 Starlette 取消协程，httpx 会真把上游请求掐掉。
-    """
+    import litellm
+
+    global _router, _router_key
+    deployments = llm_models.deployments()
+    key = hashlib.sha256(_json.dumps(deployments, sort_keys=True, default=str).encode()).hexdigest()
+    if _router is None or key != _router_key:
+        _router = litellm.Router(
+            model_list=deployments,
+            fallbacks=llm_models.fallbacks() or None,
+            num_retries=1,  # 同组内换一个 deployment 再试一次
+            set_verbose=False,
+        )
+        _router_key = key
+    return _router
+
+
+def _group_name(model: dict) -> str:
+    """挑 LiteLLM 的模型组：purpose 组里还有别的 profile 就用组名（组内挑 + 回退），否则用 profile id。"""
+    groups = llm_models.purpose_groups()
+    for purpose in model.get("purpose") or []:
+        if len(groups.get(str(purpose), [])) > 1:
+            return str(purpose)
+    return str(model.get("id"))
+
+
+# ---- direct 回落路径：原 OpenAI 单厂商客户端（LiteLLM 出问题时的退路）----
+def _direct_complete(messages: list[dict], model: dict) -> str:
+    response = _client(model).chat.completions.create(
+        model=model["model"], messages=messages, response_format={"type": "json_object"}
+    )
+    return response.choices[0].message.content or ""
+
+
+def _client(model: dict, async_: bool = False):
+    """建 OpenAI 兼容客户端（direct 路径用）。"""
     from openai import AsyncOpenAI, OpenAI
 
     factory = AsyncOpenAI if async_ else OpenAI

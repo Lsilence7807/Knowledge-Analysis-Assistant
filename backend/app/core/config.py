@@ -21,6 +21,8 @@ ENABLE_AGENT = os.getenv("ENABLE_AGENT", "true").lower() == "true"
 EXEC_MAX_WORKERS = int(os.getenv("EXEC_MAX_WORKERS", "4"))
 
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
+# 模型层后端：litellm（默认）或 direct（原 OpenAI 单厂商客户端，LiteLLM 出问题时一键回落）
+LLM_BACKEND = os.getenv("LLM_BACKEND", "litellm")
 MODELS_CONFIG = BASE_DIR / "config" / "models.json"
 TOOLS_CONFIG = BASE_DIR / "config" / "tools.json"
 LOCAL_SETTINGS = BASE_DIR / "config" / "local.json"
