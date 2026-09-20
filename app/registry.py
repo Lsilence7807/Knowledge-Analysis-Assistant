@@ -1,6 +1,7 @@
 # 文件：app/registry.py
 # 作用：能力注册表：新能力的唯一接入点，provider 只在这里被惰性装配
-# 阶段：P0 骨架与契约冻结（P2 注册 stats；P3 注册 query、llm；P13 注册 agent；P6 注册 skills；P7 注册 kb）
+# 阶段：P0 骨架与契约冻结（P2 注册 stats；P3 注册 query、llm；P13 注册 agent；P6 注册 skills；P7 注册 kb；
+#       P15 注册 sandbox）
 # 依赖：标准库 logging
 from __future__ import annotations
 
@@ -18,6 +19,7 @@ CAPABILITIES: dict[str, str] = {
     "llm": "模型可用（缺密钥时为 false）",
     "skills": "技能库：导入 SKILL.md 并按需取用（P6）",
     "kb": "知识库：md/txt 导入与关键词检索（P7）",
+    "sandbox": "受限代码执行：隔离子进程跑 pandas 代码（P15）",
 }
 
 _FACTORIES: dict[str, Callable[[], Any]] = {}
@@ -118,3 +120,13 @@ def _kb_capability():
 
 
 register("kb", _kb_capability)
+
+
+def _sandbox_capability():
+    """sandbox 能力：ENABLE_SANDBOX 打开才可用，返回 app.sandbox 模块（路由与工具从这里取用）。"""
+    from app import sandbox
+
+    return sandbox if sandbox.ENABLED else None
+
+
+register("sandbox", _sandbox_capability)
