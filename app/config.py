@@ -1,6 +1,6 @@
 # 文件：app/config.py
 # 作用：集中读取环境变量、本地设置（config/local.json）与路径，其它模块只从这里取配置
-# 阶段：P0 骨架与契约冻结（P3 加密钥来源，P5 加密钥写入）
+# 阶段：P0 骨架与契约冻结（P3 加密钥来源，P5 加密钥写入；P21 加并发与压测路径）
 # 依赖：标准库 json、os、pathlib
 from __future__ import annotations
 
@@ -17,11 +17,13 @@ MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "50"))
 AGENT_MAX_STEPS = int(os.getenv("AGENT_MAX_STEPS", "6"))
 RATE_LIMIT_PER_MIN = int(os.getenv("RATE_LIMIT_PER_MIN", "60"))
 ENABLE_AGENT = os.getenv("ENABLE_AGENT", "true").lower() == "true"
+EXEC_MAX_WORKERS = int(os.getenv("EXEC_MAX_WORKERS", "4"))
 
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
 MODELS_CONFIG = BASE_DIR / "config" / "models.json"
 TOOLS_CONFIG = BASE_DIR / "config" / "tools.json"
 LOCAL_SETTINGS = BASE_DIR / "config" / "local.json"
+BENCH_BASELINE = BASE_DIR / "bench" / "baseline.json"
 
 
 def ensure_dirs() -> None:

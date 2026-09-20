@@ -1,7 +1,7 @@
 # 文件：app/db.py
 # 作用：DuckDB 的唯一出口：登记数据集表、执行查询 SQL（守卫/超时/行数上限）、描述统计与异常检测
 # 阶段：P0 骨架与契约冻结（守卫、超时、行数上限与统计在 P2 补全；后补 drop_table、K-002、K-006）
-# 依赖：duckdb、pandas、threading、app/config.py
+# 依赖：duckdb、pandas、threading、app/config.py、app/exec.py
 from __future__ import annotations
 
 import threading
@@ -10,6 +10,7 @@ import duckdb
 import pandas as pd
 
 from app import config
+from app.exec import run_blocking
 
 DEFAULT_LIMIT = 5000
 DEFAULT_TIMEOUT_S = 10
@@ -49,8 +50,12 @@ def drop_table(dataset_id: str) -> None:
 
 
 def exec_sql(sql: str, limit: int = DEFAULT_LIMIT, timeout_s: int = DEFAULT_TIMEOUT_S) -> dict:
-    """执行单条只读 SELECT，返回 {"sql","columns","rows","row_count","truncated","hint"}。"""
-    text = _guard(sql)
+    """执行单条只读 SELECT，返回 {sql, columns, rows, row_count, truncated, hint}；阻塞部分交 app/exec.py 调度。"""
+    return run_blocking(_run_select, _guard(sql), limit, timeout_s)
+
+
+def _run_select(text: str, limit: int, timeout_s: int) -> dict:
+    """真正查库的部分（只由 run_blocking 调用）：只读连接、定时中断、取数并截断。"""
     conn = connect(read_only=True)
     state = {"timeout": False}
 

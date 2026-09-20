@@ -1,0 +1,12 @@
+{
+  "generated_at": "2026-09-20T17:37:15",
+  "rows": 500000,
+  "runs": 20,
+  "sql": "SELECT bucket, COUNT(*) AS n, AVG(amount) AS amount FROM perf GROUP BY bucket ORDER BY bucket",
+  "p50_s": 0.0565,
+  "p95_s": 0.0619,
+  "budget_s": 1.5,
+  "max_workers": 4,
+  "cpu_count": 12,
+  "previous_p95_s": null
+}

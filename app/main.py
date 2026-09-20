@@ -6,6 +6,7 @@
 # 依赖：FastAPI、app/{agent,config,db,ingest,insight,llm,models,nlu,store,tools}.py
 from __future__ import annotations
 
+import json
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
@@ -140,6 +141,18 @@ def list_tools() -> dict:
         "max_steps": int(cfg.get("max_steps", 6)),
         "max_rows_per_step": int(cfg.get("max_rows_per_step", 200)),
     }
+
+
+@app.get("/bench")
+def bench_baseline() -> dict:
+    """返回最近一次性能基线（bench/baseline.json）；没跑过压测时给结构化说明，不报错。"""
+    path = config.BENCH_BASELINE
+    if not path.exists():
+        return {"available": False, "hint": "还没跑过压测：python bench/bench.py"}
+    try:
+        return {"available": True, "baseline": json.loads(path.read_text(encoding="utf-8"))}
+    except (OSError, json.JSONDecodeError) as exc:
+        return {"available": False, "hint": f"基线读不出来：{exc}"}
 
 
 @app.post("/ask")
