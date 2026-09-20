@@ -9,9 +9,9 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import Body, FastAPI, File, HTTPException, UploadFile
 
-from app import config, ingest, registry, store
+from app import config, db, ingest, registry, store
 from app.schemas import CapabilitiesOut, HealthOut
 
 
@@ -80,3 +80,26 @@ def dataset_profile(dataset_id: str) -> dict:
         "clean_log": dataset["clean_log"],
         "table_version": dataset["table_version"],
     }
+
+
+@app.post("/query")
+def run_query(payload: dict = Body(...)) -> dict:
+    """直接执行一条只读 SQL；被守卫拦下或执行失败返回 400，错误信息可读。"""
+    try:
+        return db.exec_sql(str(payload.get("sql") or ""))
+    except db.SQLRejected as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/stats")
+def dataset_stats(payload: dict = Body(...)) -> dict:
+    """返回数据集的描述统计与异常行；数据集不存在返回 404。"""
+    dataset_id = str(payload.get("dataset_id") or "")
+    dataset = store.get_dataset(dataset_id)
+    if dataset is None:
+        raise HTTPException(status_code=404, detail="数据集不存在")
+    try:
+        result = db.describe(dataset_id, payload.get("columns"))
+    except db.SQLRejected as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"dataset_id": dataset_id, "rows": dataset["rows"], **result}
