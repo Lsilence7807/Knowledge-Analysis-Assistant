@@ -334,9 +334,83 @@ async function ask() {
   if (!dataset_id) throw new Error("先上传并选择一个数据集");
   if (!question) throw new Error("问题不能为空");
   say("banner", "");
+  if (await askStream(dataset_id, question)) return;
   const body = await postJson("/ask", { dataset_id, question });
   last = body;
   render(body);
+}
+
+// SSE 用 fetch + ReadableStream 手解帧：EventSource 不能中止、断线还会自动重连，不适合一次性提问。
+// 返回 false 表示没走成流（ENABLE_STREAM=false 的 503、旧服务、网络错），调用方回落 /ask 整段返回。
+async function askStream(dataset_id, question) {
+  const url = `/ask/stream?dataset_id=${encodeURIComponent(dataset_id)}&question=${encodeURIComponent(question)}`;
+  let response;
+  try {
+    response = await fetch(url);
+  } catch {
+    return false;
+  }
+  if (!response.ok || !(response.headers.get("content-type") || "").includes("text/event-stream")) return false;
+
+  const live = el("p", { class: "summary", text: "" });
+  $("insight").replaceChildren(live);
+  say("banner", "正在分析…");
+  const body = { dataset_id, question, sql: "", columns: [], rows: [], row_count: 0, truncated: false, steps: [], degraded: [], insight: null, message: "" };
+  const apply = (event, data) => {
+    if (event === "sql") {
+      body.sql = data.sql || "";
+      $("sql-box").hidden = !body.sql;
+      $("sql").textContent = body.sql;
+    } else if (event === "row_count") {
+      Object.assign(body, { columns: data.columns || [], rows: data.rows || [], row_count: data.row_count, truncated: data.truncated });
+      $("row-count").textContent = `${data.row_count} 行${data.truncated ? "（已截断）" : ""}`;
+    } else if (event === "token") {
+      live.textContent += data.text || "";
+    } else if (event === "insight") {
+      body.insight = data.insight;
+      body.message = data.message || "";
+    } else if (event === "trace") {
+      body.steps = data.steps || [];
+    } else if (event === "degraded") {
+      body.degraded.push(data.reason);
+    } else if (event === "done") {
+      body.degraded = data.degraded || body.degraded;
+      body.message = data.message || body.message;
+    }
+  };
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split("\n\n");
+    buffer = parts.pop(); // 末尾可能是半帧，留到下一轮再拼
+    for (const part of parts) {
+      const frame = parseFrame(part);
+      if (frame) apply(frame.event, frame.data);
+    }
+  }
+  last = body;
+  render(body);
+  return true;
+}
+
+function parseFrame(raw) {
+  let event = "message";
+  let payload = "";
+  for (const line of raw.split("\n")) {
+    if (line.startsWith("event:")) event = line.slice(6).trim();
+    else if (line.startsWith("data:")) payload += line.slice(5).trim();
+  }
+  if (!payload) return null;
+  try {
+    return { event, data: JSON.parse(payload) };
+  } catch {
+    return null; // 半帧或坏帧：丢掉这一帧，流还能继续
+  }
 }
 
 function render(body) {
