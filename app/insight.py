@@ -64,7 +64,8 @@ def _user_prompt(question: str, result: dict, profile: dict, prior: list[str]) -
         f"SQL：{result.get('sql', '')}",
         f"结果表：{len(rows)} 行（已截断：{bool(result.get('truncated'))}），列：{'、'.join(columns)}",
     ]
-    lines += [json.dumps(row, ensure_ascii=False) for row in rows[:MAX_ROWS]]
+    # default=str：结果表里可能有 datetime（DuckDB 直接给 Python 对象），不兜底会 TypeError 打成 500
+    lines += [json.dumps(row, ensure_ascii=False, default=str) for row in rows[:MAX_ROWS]]
     if len(rows) > MAX_ROWS:
         lines.append(f"（只给了前 {MAX_ROWS} 行）")
     if prior:

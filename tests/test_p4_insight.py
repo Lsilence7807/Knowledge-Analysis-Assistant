@@ -182,6 +182,19 @@ def test_table_name_digits_are_not_suspicious(client, monkeypatch):
     assert caveats == "未含退货数据"
 
 
+def test_datetime_column_does_not_break_insight(client, monkeypatch):
+    """手工复验发现的 500：结果表里有 datetime 列时 json.dumps 抛 TypeError（K-021）。"""
+    frame = pd.DataFrame({"name": ["a", "b"], "ts": pd.to_datetime(["2026-01-01", "2026-01-02"])})
+    _make_dataset(frame)
+    monkeypatch.setattr(llm, "_complete", _reply(json.dumps(GOOD_INSIGHT, ensure_ascii=False)))
+    response = client.post(
+        "/insight",
+        json={"dataset_id": "d_test", "question": "看看这表", "sql": "SELECT * FROM ds_d_test"},
+    )
+    assert response.status_code == 200
+    assert response.json()["insight"]["summary"].startswith("华北")
+
+
 def test_missing_field_degrades_to_contract(client, monkeypatch):
     _make_dataset(SAMPLE)
     broken = {key: value for key, value in GOOD_INSIGHT.items() if key != "confidence"}
