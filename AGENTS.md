@@ -14,7 +14,7 @@
 6. 提交并推送（见第 4 节）。
 7. 汇报时贴真实输出，不写"应该没问题"。
 
-## 1. 注释规范
+## 1. 注释与路径规范
 
 - 每个新建文件开头必须有一段文件头注释，格式固定：
 
@@ -29,6 +29,17 @@
 - 关键代码（分支、边界、兜底、取舍）前加一行注释说明**为什么**这么做，不复述代码在做什么。
 - 禁止：# 遍历列表 / # 返回结果 这类废话注释；禁止裸 TODO（要留就写 `# ponytail: <上限>，<何时升级>`）。
 - 注释与报错信息用中文，标识符用英文。
+
+### 路径规则（新代码必须守，验收时抽查）
+
+- 路径一律锚在 `app/config.py` 的 `BASE_DIR`（`Path(__file__).resolve().parent.parent`），**禁止依赖当前工作目录**。
+- 禁止硬编码绝对路径：盘符、`/Users/...`、`/home/...`、用户名、机器名、`%APPDATA%` 字面量都不许出现在代码与 `config/*.json` 里；桌面端的 `%APPDATA%` 只准出现在 `app/config.py` 那一个切换点（P12）。
+- 新增配置、目录、基准文件的路径先加进 `app/config.py`，其它模块只从 `config` 取，不在模块里自己拼。
+- 测试夹具用 `Path(__file__).parent`，项目外的临时目录用 `tempfile`；不许假定 cwd 是项目根。
+- 起子进程显式给 `cwd`（范例：`app/providers/mcp_client.py` 给 `BASE_DIR`、`app/providers/skills.py` 给技能目录）。
+- 落库或回给用户的路径存**相对项目根的 posix 路径**（范例 `app/providers/kb.py:_relative`），不存运行时绝对路径。
+- 抽查命令（应无输出）：`rg -n --glob '!**/vendor/**' -g '!config/local.json' -e '[A-Za-z]:\\[^nrt]' -e '/Users/' -e '/home/' -e '%APPDATA%' app config tests`
+- 换目录也要能跑：`cd $env:TEMP; & <仓库>\.venv\Scripts\python.exe -m pytest <仓库>\tests -q` 必须全绿。
 
 ## 2. 代码台账
 
