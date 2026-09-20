@@ -2,6 +2,7 @@
 
 本文件在该目录树内工作时自动加载。它只管四件事：阶段流程、注释规范、代码台账、提交推送。
 与已常驻的 ponytail（少写代码）和 benjamin-plus（少花步骤）叠加使用，不重复它们的内容；验证环节配合 skill `verification-before-completion`，收尾合分支时用 `finishing-a-development-branch`。
+文档入口：`docs/索引.md`（全部设计、功能、台账文档的作用与阅读顺序都在里面）。
 
 ## 0. 每个阶段的固定动作（顺序不要变）
 

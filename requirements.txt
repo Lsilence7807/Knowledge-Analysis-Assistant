@@ -1,0 +1,10 @@
+# 约束：新增依赖必须在行尾写 why: 一句话（见 AGENTS.md）
+fastapi            # why: HTTP 框架，自带 pydantic 校验与 OpenAPI
+uvicorn[standard]  # why: ASGI 服务器
+pandas             # why: 清洗与统计
+duckdb             # why: 分析引擎，列存聚合
+openpyxl           # why: 读写 xlsx
+pydantic           # why: HTTP 边界与 LLM 输出校验
+openai             # why: OpenAI 兼容客户端，换厂商只改 config
+pytest             # why: 每阶段一个测试文件
+ruff               # why: 格式化与静态检查
