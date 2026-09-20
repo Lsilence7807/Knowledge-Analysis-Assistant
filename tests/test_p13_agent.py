@@ -1,6 +1,6 @@
 # 文件：tests/test_p13_agent.py
 # 作用：P13 Agent 循环验收测试：多跳/单跳、步骤落库、白名单与异常、单步截断、回落 P3、/tools；
-#       A 类补丁加 tasks 落库（K-005）；B 类补丁 K-006 加每步超时一条
+#       A 类补丁加 tasks 落库（K-005）；B 类补丁 K-006 加每步超时一条、K-023 加越权直接调 call() 一条
 # 阶段：P13 Agent 循环与工具调用
 # 依赖：json、contextlib、pytest、pandas、fastapi.testclient、app.agent、app.llm、app.store、app.tools
 from __future__ import annotations
@@ -190,6 +190,17 @@ def test_tool_outside_whitelist_is_refused_and_loop_continues(client, monkeypatc
     with closing(store.connect()) as conn:
         logged = [dict(row) for row in conn.execute("SELECT capability, event FROM capability_log")]
     assert {"capability": "agent", "event": "error"} in logged
+
+
+def test_tools_call_refuses_outside_whitelist(client, monkeypatch):
+    """白名单外的工具直接调 tools.call() 也要被挡住并留痕（P6/P8 起会有新的直接调用入口）。"""
+    monkeypatch.setattr(tools, "settings", lambda: {**tools.DEFAULT_SETTINGS, "allow": ["run_sql"]})
+    with pytest.raises(tools.ToolError) as excinfo:
+        tools.call("describe_stats", {})
+    assert "白名单" in str(excinfo.value)
+    with closing(store.connect()) as conn:
+        logged = [dict(row) for row in conn.execute("SELECT capability, event FROM capability_log")]
+    assert {"capability": "tools", "event": "error"} in logged
 
 
 def test_unknown_tool_name_does_not_crash(client, monkeypatch):

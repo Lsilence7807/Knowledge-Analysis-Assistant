@@ -1,12 +1,13 @@
 # 文件：app/tools.py
 # 作用：Agent 可调用工具的注册表与 3 个只读工具（run_sql / describe_stats / detect_anomalies）
-# 阶段：P13 Agent 循环与工具调用（K-006：每步超时按 tools.json 透传给 db.describe）
-# 依赖：json、app/config.py、app/db.py
+# 阶段：P13 Agent 循环与工具调用（K-006：每步超时按 tools.json 透传给 db.describe；
+#       K-023：白名单校验收进 call()，不再只靠 agent 那层）
+# 依赖：json、app/config.py、app/db.py、app/store.py
 from __future__ import annotations
 
 import json
 
-from app import config, db
+from app import config, db, store
 
 KINDS = ("read", "write")
 DEFAULT_SETTINGS: dict = {
@@ -67,10 +68,15 @@ def kinds() -> dict[str, str]:
 
 
 def call(name: str, arguments: dict) -> dict:
-    """执行一个工具并返回结果；名字不存在或执行失败抛 ToolError（含 SQL 被守卫拒绝）。"""
+    """执行一个工具并返回结果；名字不存在、不在白名单、执行失败都抛 ToolError（含 SQL 被守卫拒绝）。"""
     tool = _TOOLS.get(name)
     if tool is None:
         raise ToolError(f"没有这个工具：{name}")
+    # K-023：白名单校验放在这一层，P6/P8 起的新入口直接调 call() 也挡得住；越权必须留痕
+    allow = [str(item) for item in settings().get("allow") or []]
+    if name not in allow:
+        store.log_capability("tools", "error", f"越权工具调用：{name}")
+        raise ToolError(f"工具 {name} 不在白名单内，已拒绝；可用工具：{'、'.join(allow)}")
     try:
         return tool["fn"](**(arguments if isinstance(arguments, dict) else {}))
     except TypeError as exc:
