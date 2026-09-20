@@ -1,6 +1,6 @@
 # 文件：app/registry.py
 # 作用：能力注册表：新能力的唯一接入点，provider 只在这里被惰性装配
-# 阶段：P0 骨架与契约冻结（P2 注册 stats；P3 注册 query、llm；P13 注册 agent；P6 注册 skills；P7 注册 kb）
+# 阶段：P0 骨架与契约冻结（P2 注册 stats；P3 注册 query、llm；P13 注册 agent；P6 注册 skills；P7 注册 kb；P8 注册 mcp）
 # 依赖：标准库 logging
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ CAPABILITIES: dict[str, str] = {
     "llm": "模型可用（缺密钥时为 false）",
     "skills": "技能库：导入 SKILL.md 并按需取用（P6）",
     "kb": "知识库：md/txt 导入与关键词检索（P7）",
+    "mcp": "MCP 插件：外部工具发现与白名单调用（P8）",
 }
 
 _FACTORIES: dict[str, Callable[[], Any]] = {}
@@ -118,3 +119,18 @@ def _kb_capability():
 
 
 register("kb", _kb_capability)
+
+
+def _mcp_capability():
+    """mcp 能力：ENABLE_MCP 打开且配置的 server 真能起来（列得出工具）才算可用。
+
+    探测会真起一次子进程，所以默认关闭时 /capabilities 零开销；server 崩了或配置坏了这里自然变 false。
+    """
+    from app.providers import mcp_client
+
+    if not mcp_client.ENABLED:
+        return None
+    return mcp_client if mcp_client.available() else None
+
+
+register("mcp", _mcp_capability)

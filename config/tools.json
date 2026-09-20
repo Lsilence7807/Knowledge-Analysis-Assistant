@@ -6,7 +6,8 @@
     "detect_anomalies",
     "list_skills",
     "use_skill",
-    "search_kb"
+    "search_kb",
+    "call_mcp_tool"
   ],
   "timeouts": {
     "run_sql": 10,

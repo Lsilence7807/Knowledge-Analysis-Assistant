@@ -2,7 +2,7 @@
 # 作用：HTTP 路由与编排，唯一装配点；禁止在此出现 pandas 调用与 SQL 字符串
 # 阶段：P0 骨架与契约冻结（P1 加数据集路由，P2 加查询路由，P3 加提问路由，P13 加 /tools 与 agent 路径，
 #       P4 加 /insight 并把结论并入 /ask，P5 加静态前端与 /settings/models；A 类补丁加 /ask 落 tasks 与
-#       DELETE /datasets/{id}，K-013 四个路由换 pydantic 请求体，P6 加 /skills，P7 加 /kb/*）
+#       DELETE /datasets/{id}，K-013 四个路由换 pydantic 请求体，P6 加 /skills，P7 加 /kb/*，P8 加 /mcp/*）
 # 依赖：FastAPI、app/{agent,config,db,ingest,insight,llm,models,nlu,store,tools}.py
 from __future__ import annotations
 
@@ -351,6 +351,33 @@ def _public_model(model: dict) -> dict:
         "model": model.get("model"),
         "has_key": bool(config.api_key(model)),
     }
+
+
+@app.get("/mcp/tools")
+def mcp_tools() -> dict:
+    """列配置里那台 MCP server 的工具（含是否在白名单内）；开关关闭或 server 起不来时 503。"""
+    return _mcp_capability().list_tools()
+
+
+@app.post("/mcp/call")
+def mcp_call(payload: dict = Body(default={})) -> dict:
+    """调一个白名单内的 MCP 工具，返回按不可信数据包裹过的结果；工具被拒或 server 不可用不抛 500。"""
+    module = _mcp_capability()
+    try:
+        return module.call_tool(str(payload.get("tool") or ""), payload.get("arguments") or {})
+    except module.McpError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _mcp_capability():
+    """取 MCP 能力；开关关闭或 server 起不来时 registry 返回 None，换成可读的 503。"""
+    module = registry.get("mcp")
+    if module is None:
+        raise HTTPException(
+            status_code=503,
+            detail="MCP 能力不可用：需要 ENABLE_MCP=true 且 config/mcp.json 里的 server 能启动",
+        )
+    return module
 
 
 # 静态前端必须挂在最后：Mount("/") 会兜住所有未匹配路径，排在 API 路由之前会把它们全抢走
