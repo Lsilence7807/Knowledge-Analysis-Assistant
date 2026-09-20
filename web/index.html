@@ -2,33 +2,149 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>AI 数据分析助手</title>
+<title>知析 · AI 数据分析助手</title>
 <script src="/vendor/echarts.min.js"></script>
 <style>
-  body { font: 14px/1.6 system-ui, "Microsoft YaHei", sans-serif; margin: 24px; color: #1f2328; }
-  h1 { font-size: 20px; }
-  h2 { font-size: 15px; margin: 22px 0 8px; }
-  section { max-width: 1080px; }
-  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-  input, select, button { font: inherit; padding: 5px 8px; border: 1px solid #d0d7de; border-radius: 6px; }
-  input { min-width: 220px; }
-  button { background: #f6f8fa; cursor: pointer; }
-  button:hover { background: #eaeef2; }
-  .muted { color: #656d76; }
-  .banner { padding: 8px 12px; border: 1px solid #d0d7de; border-left: 4px solid #1a7f37; border-radius: 6px; background: #f6f8fa; }
-  .banner.bad { border-left-color: #cf222e; }
-  .scroll { overflow: auto; max-height: 360px; }
-  table { border-collapse: collapse; width: 100%; }
-  th, td { border: 1px solid #d0d7de; padding: 4px 8px; text-align: left; white-space: nowrap; }
-  th { background: #f6f8fa; position: sticky; top: 0; }
-  #chart { height: 320px; margin: 8px 0; }
-  #sql-box pre { background: #f6f8fa; padding: 8px; overflow: auto; }
-  .caveat { border-left: 3px solid #bf8700; padding-left: 10px; margin-top: 8px; }
-  .summary { font-weight: 600; margin: 4px 0; }
+  :root{
+    --paper:#FFF7E8; --card:#FFFDF8; --ink:#17130E; --ink-soft:#443C31; --muted:#6E6455;
+    --violet:#6B4BF6; --violet-dark:#5433D6; --yellow:#FFD34D; --coral:#FF6A54; --mint:#2F9E5F;
+    --hair:#E7DFCE; --radius:16px; --shadow:6px 6px 0 var(--ink);
+  }
+  *{box-sizing:border-box}
+  [hidden]{display:none !important}
+  body{
+    margin:0; padding:28px 28px 72px; background:var(--paper); color:var(--ink);
+    font:15px/1.65 system-ui,"Microsoft YaHei",sans-serif; -webkit-font-smoothing:antialiased;
+  }
+  body::before{
+    content:""; position:fixed; inset:0; z-index:0; pointer-events:none; opacity:.55;
+    background-image:radial-gradient(var(--hair) 1.2px, transparent 1.2px); background-size:24px 24px;
+  }
+  header.topbar, section, #banner{position:relative; z-index:1}
+
+  header.topbar{
+    max-width:1080px; margin:0 auto 18px; padding:16px 20px; display:flex; align-items:center; gap:14px;
+    flex-wrap:wrap; background:var(--card); border:3px solid var(--ink); border-radius:var(--radius); box-shadow:var(--shadow);
+  }
+  .brand{display:flex; align-items:center; gap:13px; min-width:0}
+  .mark{display:block; width:44px; height:44px; flex:none}
+  .brand-text strong{display:block; font-size:23px; font-weight:800; letter-spacing:.04em; line-height:1.15}
+  .brand-text small{display:block; color:var(--muted); font-size:12.5px; letter-spacing:.02em}
+  .tagline{
+    margin-left:auto; font-size:12.5px; font-weight:700; color:var(--ink);
+    background:var(--yellow); border:2px solid var(--ink); border-radius:999px; padding:5px 13px; white-space:nowrap;
+  }
+
+  section{
+    max-width:1080px; margin:0 auto 18px; padding:18px 20px 20px;
+    background:var(--card); border:3px solid var(--ink); border-radius:var(--radius); box-shadow:var(--shadow);
+  }
+  h2{display:flex; align-items:center; gap:9px; margin:0 0 13px; font-size:16px; font-weight:800; letter-spacing:.01em}
+  h2::before{content:""; width:13px; height:13px; flex:none; border:2.5px solid var(--ink); border-radius:5px; background:var(--violet)}
+  section:nth-of-type(2) h2::before{background:var(--mint)}
+  section:nth-of-type(3) h2::before{background:var(--yellow)}
+  section:nth-of-type(4) h2::before{background:var(--coral)}
+  section:nth-of-type(5) h2::before{background:var(--violet)}
+  section:nth-of-type(6) h2::before{background:var(--mint)}
+
+  .row{display:flex; flex-wrap:wrap; gap:10px; align-items:center}
+  .row + .row{margin-top:10px}
+  .muted{color:var(--muted); font-size:13px}
+
+  input, select, button{font:inherit; color:var(--ink)}
+  input, select{
+    min-width:210px; padding:8px 11px; background:#fff; border:2px solid var(--ink); border-radius:11px;
+  }
+  input::placeholder{color:#9C9384}
+  input[type=file]{min-width:0; border-style:dashed; background:var(--card); padding:7px 10px}
+  input[type=password]{min-width:210px}
+  input:focus-visible, select:focus-visible, button:focus-visible, summary:focus-visible{
+    outline:3px solid var(--violet); outline-offset:2px;
+  }
+  button{
+    padding:8px 16px; font-weight:700; background:var(--card); border:2px solid var(--ink); border-radius:11px;
+    box-shadow:3px 3px 0 var(--ink); cursor:pointer;
+    transition:transform .12s ease, box-shadow .12s ease, background .12s ease;
+  }
+  button:hover{transform:translate(-1px,-1px); box-shadow:4px 4px 0 var(--ink); background:#fff}
+  button:active{transform:translate(2px,2px); box-shadow:1px 1px 0 var(--ink)}
+  #m-save, #ask{background:var(--violet); color:#fff}
+  #m-save:hover, #ask:hover{background:var(--violet-dark)}
+  #upload{background:var(--yellow)}
+  #delete-dataset{background:#FFE1DA}
+
+  p#banner{margin:0 auto 18px; max-width:1080px}
+  .banner{
+    padding:10px 14px; background:#EAF7EF; border:2px solid var(--ink); border-left:8px solid var(--mint);
+    border-radius:12px; font-weight:600;
+  }
+  .banner.bad{background:#FFEDE9; border-left-color:var(--coral)}
+
+  #sql-box{border:2px solid var(--ink); border-radius:12px; background:#fff; overflow:hidden; margin-top:12px}
+  #sql-box summary{cursor:pointer; padding:9px 14px; font-weight:700; background:var(--yellow)}
+  #sql-box[open] summary{border-bottom:2px solid var(--ink)}
+  #sql-box pre{
+    margin:0; padding:12px 14px; background:#17130E; color:#F6EEDC; overflow:auto;
+    font:12.5px/1.6 ui-monospace,Consolas,monospace;
+  }
+
+  #steps{margin:0; padding:0; list-style:none; counter-reset:step}
+  #steps li{
+    counter-increment:step; position:relative; margin-bottom:8px; padding:7px 12px 7px 42px;
+    background:#FFFCF4; border:2px solid var(--hair); border-radius:10px; font-size:13.5px; color:var(--ink-soft);
+  }
+  #steps li::before{
+    content:counter(step); position:absolute; left:9px; top:7px; width:22px; height:22px; display:grid; place-items:center;
+    background:var(--violet); color:#fff; border:2px solid var(--ink); border-radius:50%; font-size:11.5px; font-weight:700;
+  }
+  #steps:empty::after{content:"提问后，这里逐步显示模型调用了什么工具、耗时与返回行数"; color:var(--muted); font-size:13px}
+
+  #insight{padding:14px 16px; background:#FFFBEF; border:2px dashed var(--hair); border-radius:12px}
+  #insight > .muted{margin:0; text-align:center}
+  .summary{margin:0 0 10px; font-size:15px; font-weight:700}
+  #insight ul{margin:4px 0 10px; padding-left:20px}
+  #insight li{margin:3px 0}
+  #insight strong{display:inline-block}
+  .caveat{margin-top:10px; padding:9px 12px; background:#FFF8E1; border-left:5px solid var(--yellow); border-radius:0 10px 10px 0}
+
+  #chart{height:320px; margin:10px 0}
+  #row-count{font-weight:600}
+
+  .scroll{overflow:auto; max-height:420px; background:#fff; border:2px solid var(--hair); border-radius:12px}
+  table{border-collapse:separate; border-spacing:0; width:100%; font-size:13.5px}
+  th, td{padding:7px 11px; text-align:left; white-space:nowrap; border-bottom:1px solid var(--hair)}
+  th{position:sticky; top:0; z-index:1; background:#FBF6EA; font-weight:700; border-bottom:2px solid var(--ink)}
+  tbody tr:nth-child(even){background:#FFFCF4}
+  tbody tr:hover{background:#FFF3D6}
+  tbody tr:last-child td{border-bottom:0}
+
+  @keyframes rise{from{opacity:0; transform:translateY(8px)} to{opacity:1; transform:none}}
+  header.topbar, section{animation:rise .34s ease-out both}
+  section:nth-of-type(2){animation-delay:.04s}
+  section:nth-of-type(3){animation-delay:.08s}
+  section:nth-of-type(4){animation-delay:.12s}
+  section:nth-of-type(5){animation-delay:.16s}
+  section:nth-of-type(6){animation-delay:.2s}
+  @media (prefers-reduced-motion: reduce){ *{animation:none !important; transition:none !important} }
 </style>
 </head>
 <body>
-<h1>AI 数据分析助手</h1>
+<header class="topbar">
+  <span class="mark" aria-hidden="true">
+    <svg viewBox="0 0 48 48" width="44" height="44">
+      <rect x="3" y="3" width="42" height="42" rx="12" fill="#6B4BF6" stroke="#17130E" stroke-width="3"/>
+      <rect x="11.5" y="24" width="6" height="13" rx="3" fill="#FFD34D" stroke="#17130E" stroke-width="2.5"/>
+      <rect x="21" y="16" width="6" height="21" rx="3" fill="#FFF7E8" stroke="#17130E" stroke-width="2.5"/>
+      <rect x="30.5" y="20" width="6" height="17" rx="3" fill="#FF6A54" stroke="#17130E" stroke-width="2.5"/>
+      <circle cx="24" cy="9.6" r="2.6" fill="#FFF7E8" stroke="#17130E" stroke-width="2"/>
+    </svg>
+  </span>
+  <span class="brand-text">
+    <strong>知析</strong>
+    <small>AI 数据分析助手 · 上传表格，用中文提问，拿到带依据的结论</small>
+  </span>
+  <span class="tagline">结论里的数字都可追溯</span>
+</header>
 <p id="banner" class="banner" hidden></p>
 
 <section>
@@ -275,6 +391,13 @@ function renderTable(columns, rows) {
   $("table").replaceChildren(head, body);
 }
 
+const chartTheme = {
+  color: ["#6B4BF6", "#FFD34D", "#FF6A54", "#2F9E5F", "#5433D6", "#B08C00"],
+  textStyle: { color: "#443C31", fontFamily: 'system-ui, "Microsoft YaHei", sans-serif' },
+  grid: { left: 12, right: 18, top: 28, bottom: 6, containLabel: true },
+  tooltip: { borderColor: "#17130E", borderWidth: 2, backgroundColor: "#FFFDF8", textStyle: { color: "#17130E" } },
+};
+
 function renderChart(columns, rows) {
   const metric = columns.findIndex((_, index) => rows.every((row) => typeof row[index] === "number"));
   const label = columns.findIndex((_, index) => !rows.every((row) => typeof row[index] === "number"));
@@ -294,14 +417,40 @@ function renderChart(columns, rows) {
   const type = $("chart-type").value;
   const option =
     type === "pie"
-      ? { series: [{ type: "pie", radius: "60%", data: labels.map((name, index) => ({ name, value: numbers[index] })) }] }
+      ? {
+          series: [
+            {
+              type: "pie",
+              radius: "60%",
+              itemStyle: { borderColor: "#17130E", borderWidth: 2 },
+              label: { color: "#443C31" },
+              data: labels.map((name, index) => ({ name, value: numbers[index] })),
+            },
+          ],
+        }
       : {
           tooltip: { trigger: "axis" },
-          xAxis: { type: "category", data: labels },
-          yAxis: { type: "value" },
-          series: [{ name: columns[metric], type, data: numbers }],
+          xAxis: {
+            type: "category",
+            data: labels,
+            axisLine: { lineStyle: { color: "#17130E", width: 2 } },
+            axisTick: { show: false },
+          },
+          yAxis: {
+            type: "value",
+            splitLine: { lineStyle: { color: "#E7DFCE" } },
+            axisLine: { show: false },
+          },
+          series: [
+            {
+              name: columns[metric],
+              type,
+              itemStyle: { borderColor: "#17130E", borderWidth: 2, borderRadius: type === "bar" ? [6, 6, 0, 0] : 0 },
+              data: numbers,
+            },
+          ],
         };
-  chart.setOption(option, true);
+  chart.setOption({ ...chartTheme, ...option }, true);
 }
 
 (async function start() {
