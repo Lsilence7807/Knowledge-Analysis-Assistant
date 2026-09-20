@@ -6,7 +6,7 @@ uvicorn[standard]  # why: ASGI 服务器，含 SSE / websockets 支持 | 阶段 
 python-multipart   # why: FastAPI 解析 multipart 上传，缺它 /datasets 直接报错 | 阶段 P1
 pandas             # why: 清洗与统计 | 阶段 P1
 numpy              # why: 数值计算与向量暴力检索（pandas 已依赖，显式列出） | 阶段 P1/P14
-duckdb             # why: 分析引擎，列存聚合与全文检索 | 阶段 P1/P7
+duckdb             # why: 分析引擎，列存聚合（知识库检索用标准库 SQLite FTS5，不依赖它） | 阶段 P1
 openpyxl           # why: 读写 xlsx | 阶段 P1
 xlrd               # why: 读取旧版 .xls，openpyxl 不支持 | 阶段 P1
 charset-normalizer # why: 中文 CSV 多为 GBK，自动识别编码 | 阶段 P1
