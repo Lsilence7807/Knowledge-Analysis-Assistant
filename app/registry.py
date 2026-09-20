@@ -1,6 +1,6 @@
 # 文件：app/registry.py
 # 作用：能力注册表：新能力的唯一接入点，provider 只在这里被惰性装配
-# 阶段：P0 骨架与契约冻结
+# 阶段：P0 骨架与契约冻结（P3 注册 query、llm）
 # 依赖：标准库 logging
 from __future__ import annotations
 
@@ -42,3 +42,23 @@ def get(name: str) -> Any:
 def status() -> dict[str, bool]:
     """能力可用性，供 /capabilities 使用。"""
     return {name: get(name) is not None for name in CAPABILITIES}
+
+
+def _query_capability():
+    """query 能力：有密钥且能取到模型 profile 才算可用，否则 get() 兜成不可用。"""
+    from app import llm, nlu
+
+    llm.ensure_ready()
+    return nlu.to_sql
+
+
+def _llm_capability():
+    """llm 能力：等价于「存在可用的模型 profile」。"""
+    from app import llm
+
+    llm.ensure_ready()
+    return llm
+
+
+register("query", _query_capability)
+register("llm", _llm_capability)

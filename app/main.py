@@ -1,7 +1,7 @@
 # 文件：app/main.py
 # 作用：HTTP 路由与编排，唯一装配点；禁止在此出现 pandas 调用与 SQL 字符串
-# 阶段：P0 骨架与契约冻结（P1 加数据集路由，P2 加查询路由）
-# 依赖：FastAPI、app/config.py、app/registry.py、app/schemas.py、app/store.py
+# 阶段：P0 骨架与契约冻结（P1 加数据集路由，P2 加查询路由，P3 加提问路由）
+# 依赖：FastAPI、app/config.py、app/db.py、app/ingest.py、app/llm.py、app/nlu.py、app/store.py
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
@@ -11,7 +11,7 @@ from uuid import uuid4
 
 from fastapi import Body, FastAPI, File, HTTPException, UploadFile
 
-from app import config, db, ingest, registry, store
+from app import config, db, ingest, llm, nlu, registry, store
 from app.schemas import CapabilitiesOut, HealthOut
 
 
@@ -103,3 +103,48 @@ def dataset_stats(payload: dict = Body(...)) -> dict:
     except db.SQLRejected as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"dataset_id": dataset_id, "rows": dataset["rows"], **result}
+
+
+@app.post("/ask")
+def ask(payload: dict = Body(...)) -> dict:
+    """提问 →（模型）→ SQL → 结果表；模型不可用或 SQL 不合法时降级，HTTP 仍 200。"""
+    dataset_id = str(payload.get("dataset_id") or "")
+    question = str(payload.get("question") or "").strip()
+    dataset = store.get_dataset(dataset_id)
+    if dataset is None:
+        raise HTTPException(status_code=404, detail="数据集不存在")
+    if not question:
+        raise HTTPException(status_code=400, detail="问题不能为空")
+    base = {
+        "task_id": f"t_{uuid4().hex[:8]}",
+        "dataset_id": dataset_id,
+        "sql": "",
+        "columns": [],
+        "rows": [],
+        "steps": [],
+        "cached": False,
+        "reused_sql": False,
+        "degraded": [],
+        "message": "",
+    }
+    profile = {**dataset["profile"], "table": dataset["table_name"]}
+    try:
+        sql = nlu.to_sql(question, profile, [])
+    except (llm.LLMUnavailable, llm.LLMError, nlu.NLUError) as exc:
+        # 模型这条路整体降级：手写 SQL 的 /query 不受影响，用户仍能拿到结果
+        return {**base, "degraded": ["query:llm"], "message": str(exc)}
+    try:
+        result = db.exec_sql(sql)
+    except db.SQLRejected as exc:
+        return {
+            **base,
+            "degraded": ["query:llm"],
+            "message": f"模型给出的 SQL 未通过校验，已拒绝执行：{exc}",
+        }
+    return {
+        **base,
+        "sql": result["sql"],
+        "columns": result["columns"],
+        "rows": result["rows"],
+        "truncated": result["truncated"],
+    }
