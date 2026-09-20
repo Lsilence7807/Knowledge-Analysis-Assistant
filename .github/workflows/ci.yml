@@ -21,10 +21,4 @@ jobs:
       - name: ruff 格式检查
         run: ruff format --check app tests
       - name: 验收测试
-        run: |
-          pytest tests -q 2>&1 | tee /tmp/pytest.log
-          code=${PIPESTATUS[0]}
-          if [ "$code" != "0" ]; then
-            echo "::error::$(tail -30 /tmp/pytest.log | paste -sd'|' -)"
-          fi
-          exit $code
+        run: pytest tests -q
