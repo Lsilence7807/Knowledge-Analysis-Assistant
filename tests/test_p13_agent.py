@@ -239,13 +239,14 @@ def test_tool_error_marks_step_failed_and_keeps_200(client, monkeypatch):
     assert kept["rows"] == [[12]]
 
 
-def test_large_step_result_is_summarized(client, monkeypatch):
+def test_large_step_result_is_capped_in_context_not_in_response(client, monkeypatch):
+    """K-008：响应结果表按 /query 口径给足行数，回给模型的那份仍截到 200 行。"""
     _make_dataset(BIG, "d_big")
-    fake = _model(_call("run_sql", sql="SELECT * FROM ds_d_big"), _final("明细超过 200 行，只看前 200 行"))
+    fake = _model(_call("run_sql", sql="SELECT * FROM ds_d_big"), _final("明细 500 行都拿到了"))
     monkeypatch.setattr(llm, "chat_tools", fake)
     body = client.post("/ask", json={"dataset_id": "d_big", "question": "看明细"}).json()
-    assert body["truncated"] is True and len(body["rows"]) == 200
-    assert body["steps"][0]["rows"] == 200
+    assert body["truncated"] is False and len(body["rows"]) == 500 and body["row_count"] == 500
+    assert body["steps"][0]["rows"] == 500
     handed_back = json.dumps(fake.seen[1], ensure_ascii=False)
     assert '"rows"' not in handed_back and "只回列名与行数" in handed_back
 

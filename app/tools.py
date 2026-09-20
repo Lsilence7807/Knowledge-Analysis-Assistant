@@ -95,12 +95,12 @@ COLUMNS_ARG = {
 
 
 def _run_sql(sql: str = "", dataset_id: str = "") -> dict:
-    """执行单条只读 SELECT（不带分号、不做写操作），返回列名与最多 200 行结果。"""
+    """执行单条只读 SELECT（不带分号、不做写操作），返回列名与最多 5000 行结果。"""
     # dataset_id 由 agent 统一注入，这里用不上：守卫已把语句限死在只读 SELECT，表名由模型自己写
     cfg = settings()
-    rows = int(cfg.get("max_rows_per_step", 200))
     timeout = int((cfg.get("timeouts") or {}).get("run_sql", 10))
-    return db.exec_sql(sql, limit=rows, timeout_s=timeout)
+    # K-008：取数与 /query 同口径，末步结果表不再被截到 200 行；回模型的那份由 agent._shrink 按 max_rows_per_step 截
+    return db.exec_sql(sql, limit=db.DEFAULT_LIMIT, timeout_s=timeout)
 
 
 def _describe_stats(columns: list | None = None, dataset_id: str = "") -> dict:

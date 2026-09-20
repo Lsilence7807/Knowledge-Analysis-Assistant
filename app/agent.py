@@ -1,6 +1,6 @@
 # 文件：app/agent.py
 # 作用：Agent 循环：模型规划 → 调工具 → 观察 → 再规划；产出 /ask 的响应并把步骤落 agent_steps
-# 阶段：P13 Agent 循环与工具调用
+# 阶段：P13 Agent 循环与工具调用（K-008：回模型的单步结果按 200 行截，响应结果表按 /query 口径给足）
 # 依赖：hashlib、json、time、uuid、dataclasses、app/config.py、app/llm.py、app/store.py、app/tools.py
 from __future__ import annotations
 
@@ -123,12 +123,14 @@ def _run_step(tool_call: dict, allow: list[str], dataset_id: str, n: int) -> tup
 
 
 def _shrink(payload: dict, cfg: dict) -> dict:
-    """单步结果超过 max_rows_per_step 行时只回列名与行数，别让整表撑爆模型上下文。
+    """单步结果行数超过 max_rows_per_step 时只回列名与行数，别让整表撑爆模型上下文。
 
-    全表仍在服务端，模型下一步可以用 run_sql 加聚合或 LIMIT 再取。
+    全表仍在服务端，模型下一步可以用 run_sql 加聚合或 LIMIT 再取；
+    响应里的结果表不走这条限制（K-008：按 /query 同口径最多 5000 行）。
     """
+    rows = payload.get("rows")
     limit = int(cfg.get("max_rows_per_step", 200))
-    if payload.get("ok") and payload.get("truncated"):
+    if payload.get("ok") and isinstance(rows, list) and len(rows) > limit:
         kept = {key: value for key, value in payload.items() if key != "rows"}
         kept["hint"] = f"结果超过 {limit} 行，只回列名与行数；要明细请用 run_sql 加聚合或 LIMIT"
         return kept
