@@ -88,6 +88,24 @@ def test_rejected_sql_leaves_data_untouched(client):
     assert body["rows"] == [[21]]
 
 
+def test_literals_may_contain_comment_and_semicolon_chars(client):
+    """K-002：字面量与带引号标识符里的 --、/*、; 是数据，不该触发守卫。"""
+    _make_dataset(SAMPLE)
+    body = client.post(
+        "/query",
+        json={"sql": "SELECT 'a;b' AS s, '--x' AS c, '/*y*/' AS z, 'it''s;--x' AS q, 1 AS \"k;--\""},
+    ).json()
+    assert body["columns"] == ["s", "c", "z", "q", "k;--"]
+    assert body["rows"] == [["a;b", "--x", "/*y*/", "it's;--x", 1]]
+
+
+def test_literal_does_not_smuggle_second_statement(client):
+    """字面量放行不等于放开分号：代码里带第二条语句照样拒，表也不受影响。"""
+    _make_dataset(SAMPLE)
+    assert client.post("/query", json={"sql": "SELECT 'a;b'; DROP TABLE ds_d_test"}).status_code == 400
+    assert client.post("/query", json={"sql": "SELECT count(*) AS n FROM ds_d_test"}).json()["rows"] == [[21]]
+
+
 def test_missing_table_returns_readable_400_not_500(client):
     response = client.post("/query", json={"sql": "SELECT * FROM ds_missing"})
     assert response.status_code == 400

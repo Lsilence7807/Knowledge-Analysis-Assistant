@@ -1,6 +1,6 @@
 # 文件：app/db.py
 # 作用：DuckDB 的唯一出口：登记数据集表、执行查询 SQL（守卫/超时/行数上限）、描述统计与异常检测
-# 阶段：P0 骨架与契约冻结（守卫、超时、行数上限与统计在 P2 补全；A 类补丁加 drop_table）
+# 阶段：P0 骨架与契约冻结（守卫、超时、行数上限与统计在 P2 补全；A 类补丁加 drop_table，K-002 守卫只判代码部分）
 # 依赖：duckdb、pandas、threading、app/config.py
 from __future__ import annotations
 
@@ -85,15 +85,40 @@ def exec_sql(sql: str, limit: int = DEFAULT_LIMIT, timeout_s: int = DEFAULT_TIME
     }
 
 
+def _mask_literals(text: str) -> str:
+    """把字符串字面量与带引号标识符的内容替换成空格，返回等长文本；注释与分号只在代码部分判。"""
+    chars = list(text)
+    quote = ""
+    index = 0
+    while index < len(chars):
+        char = chars[index]
+        if quote:
+            if char == quote and chars[index + 1 : index + 2] == [quote]:
+                # '' 与 "" 是转义：跨过两个引号，仍留在字面量里
+                chars[index] = chars[index + 1] = " "
+                index += 2
+                continue
+            if char == quote:
+                quote = ""
+            chars[index] = " "
+        elif char in ("'", '"'):
+            quote = char
+            chars[index] = " "
+        index += 1
+    return "".join(chars)
+
+
 def _guard(sql: str) -> str:
     """校验 SQL 只含单条只读 SELECT；解析用 DuckDB 自己的解析器，避免正则漏判。"""
     text = (sql or "").strip()
     if not text:
         raise SQLRejected("SQL 不能为空")
-    # 注释能藏起第二条语句，整条拒掉比逐段识别注释边界更不容易漏；字符串里出现 -- 或 ; 也一并拒
-    if "--" in text or "/*" in text:
+    # 注释能藏起第二条语句，整条拒掉比逐段识别注释边界更不容易漏；
+    # 但只在代码部分判：字面量里的 'a;b'、'--'、'/*' 是正常数据（K-002），引号未闭合由解析器兜底拒掉
+    code = _mask_literals(text)
+    if "--" in code or "/*" in code:
         raise SQLRejected("SQL 里不允许写注释")
-    if ";" in text:
+    if ";" in code:
         raise SQLRejected("只允许单条 SELECT，不要写分号")
     try:
         statements = duckdb.extract_statements(text)
