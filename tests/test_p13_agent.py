@@ -286,16 +286,11 @@ def test_agent_disabled_falls_back_to_p3_single_hop(client, monkeypatch):
 
 def test_tools_route_lists_registry_and_whitelist(client):
     body = client.get("/tools").json()
-    # 工具清单按名字排序；2026-09-20 加了两个技能工具（清 K-028）
-    assert [item["function"]["name"] for item in body["tools"]] == [
-        "describe_stats",
-        "detect_anomalies",
-        "list_skills",
-        "run_sql",
-        "use_skill",
-    ]
-    # 2026-09-20：技能工具进默认白名单（清 K-028），这条断言跟着文件走
-    assert body["allow"] == ["run_sql", "describe_stats", "detect_anomalies", "list_skills", "use_skill"]
+    # 2026-09-20：不再逐字钉白名单（每加一个工具就得改这条）；改钉路由契约本身——
+    # 核心三工具必须在白名单里、路由回的就是当前白名单、工具清单恰好是白名单里已注册的那些且按名字排序
+    assert {"run_sql", "describe_stats", "detect_anomalies"} <= set(body["allow"])
+    assert body["allow"] == tools.settings()["allow"]
+    assert [item["function"]["name"] for item in body["tools"]] == sorted(set(body["allow"]))
     assert body["max_steps"] == 6 and body["max_rows_per_step"] == 200
     assert body["kinds"]["run_sql"] == "read"
 

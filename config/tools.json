@@ -5,7 +5,8 @@
     "describe_stats",
     "detect_anomalies",
     "list_skills",
-    "use_skill"
+    "use_skill",
+    "search_kb"
   ],
   "timeouts": {
     "run_sql": 10,

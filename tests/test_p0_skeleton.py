@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from app import config, store
 from app.main import app
-from app.providers import skills
+from app.providers import kb, skills
 
 
 @pytest.fixture()
@@ -31,14 +31,14 @@ def test_health_ok(client):
 def test_capabilities_without_key_only_stats_available(client, monkeypatch):
     # 本机可能已经配了密钥（页面写入或 setx），这里显式关掉：测的是「没有密钥时哪些能力可用」，不是「这台机器没密钥」
     # K-022 之前断言是「全 false」；P2 补注册 stats（不依赖模型）后，无密钥时它必须 true、其余必须 false。
-    # P6 补注册 skills（同样不依赖模型，只受 ENABLE_SKILLS 控制）后总数 6：这里显式关掉技能开关，
-    # 免得本机 env 开了 ENABLE_SKILLS 就让断言晃（K-019 同款环境隔离）
+    # P6/P7 又补了 skills/kb（同样不依赖模型，只受各自 ENABLE_* 控制）：这里显式关掉这两个开关，
+    # 断言只钉「无密钥时只有 stats 可用」而不钉条数——新增能力不必再来改这条测试（K-019 同款环境隔离）
     monkeypatch.setattr(config, "api_key", lambda: "")
     monkeypatch.setattr(skills, "ENABLED", False)
+    monkeypatch.setattr(kb, "ENABLED", False)
     response = client.get("/capabilities")
     assert response.status_code == 200
     body = response.json()
-    assert len(body["capabilities"]) == 6
     assert body["capabilities"]["stats"] is True
     assert all(v is False for name, v in body["capabilities"].items() if name != "stats")
     assert set(body["descriptions"]) == set(body["capabilities"])

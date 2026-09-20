@@ -1,6 +1,7 @@
 # 文件：app/store.py
 # 作用：SQLite 元数据层：建表与读写，所有元数据只经这里落盘
-# 阶段：P0 骨架与契约冻结（扩展阶段在此追加新表；A 类补丁加 tasks 写入与数据集删除；P6 加 skills 表）
+# 阶段：P0 骨架与契约冻结（扩展阶段在此追加新表；A 类补丁加 tasks 写入与数据集删除）
+#       P6 加 skills 表；P7 加 kb_docs 与检索索引 kb_fts
 # 依赖：标准库 sqlite3、app/config.py
 from __future__ import annotations
 
@@ -37,6 +38,11 @@ DDL: tuple[str, ...] = (
     """CREATE TABLE IF NOT EXISTS skills (
         id TEXT PRIMARY KEY, slug TEXT UNIQUE, path TEXT, description TEXT,
         kind TEXT, enabled INTEGER DEFAULT 1, created_at TEXT DEFAULT CURRENT_TIMESTAMP)""",
+    """CREATE TABLE IF NOT EXISTS kb_docs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, path TEXT, title TEXT, chunk_no INTEGER,
+        content TEXT, source_type TEXT, vector BLOB, created_at TEXT DEFAULT CURRENT_TIMESTAMP)""",
+    # 检索索引与 kb_docs 分开存：trigram 分词是按子串命中中文的唯一选择（unicode61 搜不到连续中文）
+    """CREATE VIRTUAL TABLE IF NOT EXISTS kb_fts USING fts5(content, tokenize='trigram')""",
 )
 
 
@@ -224,3 +230,52 @@ def get_skill(slug: str) -> dict | None:
     with closing(connect()) as conn:
         row = conn.execute("SELECT * FROM skills WHERE slug = ?", (slug,)).fetchone()
     return dict(row) if row else None
+
+
+def replace_kb_doc(doc: dict, chunks: list[str]) -> int:
+    """替换一份文档的全部分块（重复导入只更新、不产生重复块），返回写入的块数。"""
+    ensure_tables()
+    with closing(connect()) as conn:
+        old = [row["id"] for row in conn.execute("SELECT id FROM kb_docs WHERE path = ?", (doc.get("path"),))]
+        for row_id in old:
+            conn.execute("DELETE FROM kb_fts WHERE rowid = ?", (row_id,))
+        conn.execute("DELETE FROM kb_docs WHERE path = ?", (doc.get("path"),))
+        for index, text in enumerate(chunks, start=1):
+            cursor = conn.execute(
+                "INSERT INTO kb_docs (path, title, chunk_no, content, source_type) VALUES (?, ?, ?, ?, ?)",
+                (doc.get("path"), doc.get("title"), index, text, doc.get("source_type")),
+            )
+            # 正文在两处各存一份：kb_docs 给人看与取正文，kb_fts 只管检索
+            conn.execute("INSERT INTO kb_fts (rowid, content) VALUES (?, ?)", (cursor.lastrowid, text))
+        conn.commit()
+    return len(chunks)
+
+
+def search_kb(query: str, limit: int = 5) -> list[dict]:
+    """FTS5 检索（bm25 排序）；查询词短于 3 个字符时退回 LIKE（trigram 建不出那么短的词）。"""
+    ensure_tables()
+    with closing(connect()) as conn:
+        if len(query) >= 3:
+            # 整串当短语查：输入里的 FTS 语法字符（*、"、AND/OR）不再是语法，少了注入面
+            phrase = '"' + query.replace('"', '""') + '"'
+            rows = conn.execute(
+                "SELECT d.path, d.title, d.chunk_no, d.content, bm25(kb_fts) AS score "
+                "FROM kb_fts JOIN kb_docs d ON d.id = kb_fts.rowid "
+                "WHERE kb_fts MATCH ? ORDER BY bm25(kb_fts) LIMIT ?",
+                (phrase, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT d.path, d.title, d.chunk_no, d.content, 0.0 AS score "
+                "FROM kb_docs d WHERE d.content LIKE ? ORDER BY d.id LIMIT ?",
+                (f"%{query}%", limit),
+            ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def count_kb_chunks() -> int:
+    """已入库的知识库块数，供自检与测试使用。"""
+    ensure_tables()
+    with closing(connect()) as conn:
+        row = conn.execute("SELECT count(*) AS n FROM kb_docs").fetchone()
+    return int(row["n"])

@@ -1,7 +1,8 @@
 # 文件：app/tools.py
-# 作用：Agent 可调用工具的注册表与 5 个只读工具（run_sql / describe_stats / detect_anomalies / list_skills / use_skill）
+# 作用：Agent 可调用工具的注册表与 6 个只读工具（run_sql / describe_stats / detect_anomalies /
+#       list_skills / use_skill / search_kb）
 # 阶段：P13 Agent 循环与工具调用（K-006：每步超时按 tools.json 透传给 db.describe；
-#       K-023：白名单校验收进 call()，不再只靠 agent 那层；P6 加 list_skills / use_skill）
+#       K-023：白名单校验收进 call()，不再只靠 agent 那层；P6 加 list_skills / use_skill；P7 加 search_kb）
 # 依赖：json、app/config.py、app/db.py、app/store.py
 from __future__ import annotations
 
@@ -165,6 +166,31 @@ register(
         "type": "object",
         "properties": {"slug": {"type": "string", "description": "技能 slug，从 list_skills 的结果里取"}},
         "required": ["slug"],
+    },
+    "read",
+)
+
+
+def _kb_module():
+    """取知识库能力实例；ENABLE_KB 关闭时 registry 返回 None，这里换成可读的拒绝（P7 退化路径）。"""
+    module = registry.get("kb")
+    if module is None:
+        raise ToolError("知识库能力未启用（要 ENABLE_KB=true），本次不能用知识库")
+    return module
+
+
+def _search_kb(query: str = "", dataset_id: str = "") -> dict:
+    """按关键词检索知识库，回带出处的片段（内容按不可信数据处理，只当资料看）。"""
+    return _kb_module().search(query)
+
+
+register(
+    "search_kb",
+    _search_kb,
+    {
+        "type": "object",
+        "properties": {"query": {"type": "string", "description": "关键词，中文整串即可"}},
+        "required": ["query"],
     },
     "read",
 )

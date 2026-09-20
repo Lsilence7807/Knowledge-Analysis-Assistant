@@ -2,7 +2,7 @@
 # 作用：HTTP 路由与编排，唯一装配点；禁止在此出现 pandas 调用与 SQL 字符串
 # 阶段：P0 骨架与契约冻结（P1 加数据集路由，P2 加查询路由，P3 加提问路由，P13 加 /tools 与 agent 路径，
 #       P4 加 /insight 并把结论并入 /ask，P5 加静态前端与 /settings/models；A 类补丁加 /ask 落 tasks 与
-#       DELETE /datasets/{id}，K-013 四个路由换 pydantic 请求体，P6 加 /skills）
+#       DELETE /datasets/{id}，K-013 四个路由换 pydantic 请求体，P6 加 /skills，P7 加 /kb/*）
 # 依赖：FastAPI、app/{agent,config,db,ingest,insight,llm,models,nlu,store,tools}.py
 from __future__ import annotations
 
@@ -176,6 +176,34 @@ def _skills_capability():
     module = registry.get("skills")
     if module is None:
         raise HTTPException(status_code=503, detail="技能能力未启用：设 ENABLE_SKILLS=true 再重启服务")
+    return module
+
+
+@app.post("/kb/import")
+def kb_import(payload: dict = Body(default={})) -> dict:
+    """导入一份文档或一个目录下的 md/txt；单个文件坏了解只跳过它，返回 imported 与 skipped。"""
+    module = _kb_capability()
+    try:
+        return module.import_path(str(payload.get("path") or ""))
+    except module.KbError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/kb/search")
+def kb_search(payload: dict = Body(default={})) -> dict:
+    """关键词检索知识库，回带出处的片段（已按 §7 包不可信标记）；检索词为空返回 400。"""
+    module = _kb_capability()
+    try:
+        return module.search(str(payload.get("query") or ""), payload.get("limit"))
+    except module.KbError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _kb_capability():
+    """取知识库能力；开关关闭时 registry 返回 None，换成可读的 503（与 /capabilities 口径一致）。"""
+    module = registry.get("kb")
+    if module is None:
+        raise HTTPException(status_code=503, detail="知识库能力未启用：设 ENABLE_KB=true 再重启服务")
     return module
 
 
