@@ -1,6 +1,6 @@
 # 文件：tests/test_p13_agent.py
 # 作用：P13 Agent 循环验收测试：多跳/单跳、步骤落库、白名单与异常、单步截断、回落 P3、/tools；
-#       A 类补丁加 tasks 落库（K-005）
+#       A 类补丁加 tasks 落库（K-005）；B 类补丁 K-006 加每步超时一条
 # 阶段：P13 Agent 循环与工具调用
 # 依赖：json、contextlib、pytest、pandas、fastapi.testclient、app.agent、app.llm、app.store、app.tools
 from __future__ import annotations
@@ -278,3 +278,22 @@ def test_tools_route_lists_registry_and_whitelist(client):
     assert body["allow"] == ["run_sql", "describe_stats", "detect_anomalies"]
     assert body["max_steps"] == 6 and body["max_rows_per_step"] == 200
     assert body["kinds"]["run_sql"] == "read"
+
+
+def test_step_timeouts_come_from_tools_json(monkeypatch):
+    """K-006：三个工具都按 tools.json 的 timeouts 走，describe 不再吃 exec_sql 的默认 10s。"""
+    seen: list[int] = []
+    monkeypatch.setattr(
+        tools,
+        "settings",
+        lambda: {**tools.DEFAULT_SETTINGS, "timeouts": {"run_sql": 3, "describe_stats": 7, "detect_anomalies": 9}},
+    )
+    monkeypatch.setattr(
+        db,
+        "exec_sql",
+        lambda sql, **kwargs: seen.append(kwargs["timeout_s"]) or {"rows": [], "columns": [], "truncated": False},
+    )
+    tools.call("run_sql", {"sql": "SELECT 1"})
+    tools.call("describe_stats", {})
+    tools.call("detect_anomalies", {})
+    assert seen == [3, 7, 9]

@@ -1,6 +1,6 @@
 # 文件：app/tools.py
 # 作用：Agent 可调用工具的注册表与 3 个只读工具（run_sql / describe_stats / detect_anomalies）
-# 阶段：P13 Agent 循环与工具调用
+# 阶段：P13 Agent 循环与工具调用（K-006：每步超时按 tools.json 透传给 db.describe）
 # 依赖：json、app/config.py、app/db.py
 from __future__ import annotations
 
@@ -105,12 +105,16 @@ def _run_sql(sql: str = "", dataset_id: str = "") -> dict:
 
 def _describe_stats(columns: list | None = None, dataset_id: str = "") -> dict:
     """返回数据集的描述统计：每列的计数、缺失、分位数、均值与标准差。"""
-    return db.describe(dataset_id, columns)
+    cfg = settings()
+    timeout = int((cfg.get("timeouts") or {}).get("describe_stats", 15))
+    return db.describe(dataset_id, columns, timeout_s=timeout)
 
 
 def _detect_anomalies(columns: list | None = None, dataset_id: str = "") -> dict:
     """返回数据集里被 IQR 或 z-score 判为异常的行及原因。"""
-    result = db.describe(dataset_id, columns)
+    cfg = settings()
+    timeout = int((cfg.get("timeouts") or {}).get("detect_anomalies", 15))
+    result = db.describe(dataset_id, columns, timeout_s=timeout)
     return {"table": result["table"], "row_count": result["row_count"], "anomalies": result["anomalies"]}
 
 

@@ -1,6 +1,6 @@
 # 文件：app/db.py
 # 作用：DuckDB 的唯一出口：登记数据集表、执行查询 SQL（守卫/超时/行数上限）、描述统计与异常检测
-# 阶段：P0 骨架与契约冻结（守卫、超时、行数上限与统计在 P2 补全；A 类补丁加 drop_table，K-002 守卫只判代码部分）
+# 阶段：P0 骨架与契约冻结（守卫、超时、行数上限与统计在 P2 补全；后补 drop_table、K-002、K-006）
 # 依赖：duckdb、pandas、threading、app/config.py
 from __future__ import annotations
 
@@ -131,10 +131,14 @@ def _guard(sql: str) -> str:
     return text
 
 
-def describe(dataset_id: str, columns: list[str] | None = None) -> dict:
-    """返回数据集的描述统计与 IQR / z-score 异常行。"""
+def describe(
+    dataset_id: str,
+    columns: list[str] | None = None,
+    timeout_s: int = DEFAULT_TIMEOUT_S,
+) -> dict:
+    """返回数据集的描述统计与 IQR / z-score 异常行；超时按调用方给的秒数（K-006）。"""
     name = table_name(dataset_id)
-    result = exec_sql(f'SELECT * FROM "{name}"')
+    result = exec_sql(f'SELECT * FROM "{name}"', timeout_s=timeout_s)
     frame = pd.DataFrame(result["rows"], columns=result["columns"])
     if columns:
         frame = frame[[col for col in columns if col in frame.columns]]
