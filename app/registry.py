@@ -1,6 +1,6 @@
 # 文件：app/registry.py
 # 作用：能力注册表：新能力的唯一接入点，provider 只在这里被惰性装配
-# 阶段：P0 骨架与契约冻结（P3 注册 query、llm；P13 注册 agent）
+# 阶段：P0 骨架与契约冻结（P2 注册 stats；P3 注册 query、llm；P13 注册 agent）
 # 依赖：标准库 logging
 from __future__ import annotations
 
@@ -44,6 +44,16 @@ def get(name: str) -> Any:
 def status() -> dict[str, bool]:
     """能力可用性，供 /capabilities 使用。"""
     return {name: get(name) is not None for name in CAPABILITIES}
+
+
+def _stats_capability():
+    """stats 能力：描述统计走 DuckDB，不依赖模型；K-022 补注册，此前只声明没装配。"""
+    from app import db
+
+    return db.describe
+
+
+register("stats", _stats_capability)
 
 
 def _query_capability():

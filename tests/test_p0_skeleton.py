@@ -27,14 +27,16 @@ def test_health_ok(client):
     assert response.json() == {"status": "ok"}
 
 
-def test_capabilities_all_false_at_p0(client, monkeypatch):
-    # 本机可能已经配了密钥（页面写入或 setx），这里显式关掉：测的是「P0 阶段没有可用能力」，不是「这台机器没密钥」
+def test_capabilities_without_key_only_stats_available(client, monkeypatch):
+    # 本机可能已经配了密钥（页面写入或 setx），这里显式关掉：测的是「没有密钥时哪些能力可用」，不是「这台机器没密钥」
+    # K-022 之前断言是「全 false」；P2 补注册 stats（不依赖模型）后，无密钥时它必须 true、其余四个必须 false
     monkeypatch.setattr(config, "api_key", lambda: "")
     response = client.get("/capabilities")
     assert response.status_code == 200
     body = response.json()
     assert len(body["capabilities"]) == 5
-    assert set(body["capabilities"].values()) == {False}
+    assert body["capabilities"]["stats"] is True
+    assert all(v is False for name, v in body["capabilities"].items() if name != "stats")
     assert set(body["descriptions"]) == set(body["capabilities"])
 
 
