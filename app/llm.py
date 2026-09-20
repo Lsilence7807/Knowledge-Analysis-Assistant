@@ -73,6 +73,45 @@ def _complete(messages: list[dict], model: dict) -> str:
     return response.choices[0].message.content or ""
 
 
+def chat_tools(messages: list[dict], tools: list[dict], model_id: str | None = None) -> dict:
+    """让模型决定下一步：返回 {"content": str, "tool_calls": [{"id","name","arguments"}]}。
+
+    arguments 已解析成 dict；模型给的不是合法 JSON 时当空参处理，由工具层报「参数不匹配」让它改。
+    """
+    model = ensure_ready(model_id)
+    client = _client(model)
+    response = client.chat.completions.create(
+        model=model["model"], messages=messages, tools=tools, tool_choice="auto"
+    )
+    message = response.choices[0].message
+    calls: list[dict] = []
+    for call in message.tool_calls or []:
+        try:
+            parsed = json.loads(call.function.arguments or "{}")
+        except json.JSONDecodeError:
+            parsed = {}
+        calls.append(
+            {
+                "id": call.id,
+                "name": call.function.name,
+                "arguments": parsed if isinstance(parsed, dict) else {},
+            }
+        )
+    return {"content": message.content or "", "tool_calls": calls}
+
+
+def _client(model: dict):
+    """建 OpenAI 兼容客户端；_complete 里的旧副本按阶段隔离规则不动，新代码走这里。"""
+    from openai import OpenAI
+
+    return OpenAI(
+        api_key=config.api_key(model),
+        base_url=model.get("base_url"),
+        timeout=model.get("timeout_s", 30),
+        max_retries=0,
+    )
+
+
 def _clip(text) -> str:
     """截断模型原文，避免超长文本撑爆报错信息与日志。"""
     flat = " ".join(str(text).split())

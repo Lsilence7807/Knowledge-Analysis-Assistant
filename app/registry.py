@@ -1,6 +1,6 @@
 # 文件：app/registry.py
 # 作用：能力注册表：新能力的唯一接入点，provider 只在这里被惰性装配
-# 阶段：P0 骨架与契约冻结（P3 注册 query、llm）
+# 阶段：P0 骨架与契约冻结（P3 注册 query、llm；P13 注册 agent）
 # 依赖：标准库 logging
 from __future__ import annotations
 
@@ -62,3 +62,14 @@ def _llm_capability():
 
 register("query", _query_capability)
 register("llm", _llm_capability)
+
+
+def _agent_capability():
+    """agent 能力：有密钥才算可用，返回 agent.run。"""
+    from app import agent, llm
+
+    llm.ensure_ready()
+    return agent.run
+
+
+register("agent", _agent_capability)

@@ -6,9 +6,12 @@ from __future__ import annotations
 
 import sqlite3
 import json
+import logging
 from contextlib import closing
 
 from app import config
+
+logger = logging.getLogger(__name__)
 
 DDL: tuple[str, ...] = (
     """CREATE TABLE IF NOT EXISTS datasets (
@@ -97,3 +100,38 @@ def get_dataset(dataset_id: str) -> dict | None:
     result["profile"] = json.loads(result.pop("profile_json") or "{}")
     result["clean_log"] = json.loads(result["clean_log"] or "[]")
     return result
+
+
+def insert_agent_step(task_id: str, step: dict) -> None:
+    """写一条 agent 步骤流水；args_json 存的是参数摘要（设计的 args_digest），完整参数落库没意义。"""
+    ensure_tables()
+    with closing(connect()) as conn:
+        conn.execute(
+            "INSERT INTO agent_steps (task_id, n, tool, args_json, ok, ms, rows, error) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                task_id,
+                step.get("n"),
+                step.get("tool"),
+                step.get("args_digest"),
+                int(bool(step.get("ok"))),
+                step.get("ms"),
+                step.get("rows"),
+                step.get("error", ""),
+            ),
+        )
+        conn.commit()
+
+
+def log_capability(capability: str, event: str, detail: str = "") -> None:
+    """写一条能力流水（越权调用、能力上下线等）；这是诊断信息，写失败不能拖垮主流程。"""
+    try:
+        ensure_tables()
+        with closing(connect()) as conn:
+            conn.execute(
+                "INSERT INTO capability_log (capability, event, detail) VALUES (?, ?, ?)",
+                (capability, event, detail),
+            )
+            conn.commit()
+    except sqlite3.Error as exc:
+        logger.warning("能力流水写入失败(%s/%s)：%s", capability, event, exc)

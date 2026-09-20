@@ -1,17 +1,18 @@
 # 文件：app/main.py
 # 作用：HTTP 路由与编排，唯一装配点；禁止在此出现 pandas 调用与 SQL 字符串
-# 阶段：P0 骨架与契约冻结（P1 加数据集路由，P2 加查询路由，P3 加提问路由）
-# 依赖：FastAPI、app/config.py、app/db.py、app/ingest.py、app/llm.py、app/nlu.py、app/store.py
+# 阶段：P0 骨架与契约冻结（P1 加数据集路由，P2 加查询路由，P3 加提问路由，P13 加 /tools 与 agent 路径）
+# 依赖：FastAPI、app/{agent,config,db,ingest,llm,nlu,store,tools}.py
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from dataclasses import asdict
 
 from pathlib import Path
 from uuid import uuid4
 
 from fastapi import Body, FastAPI, File, HTTPException, UploadFile
 
-from app import config, db, ingest, llm, nlu, registry, store
+from app import agent, config, db, ingest, llm, nlu, registry, store, tools
 from app.schemas import CapabilitiesOut, HealthOut
 
 
@@ -105,6 +106,19 @@ def dataset_stats(payload: dict = Body(...)) -> dict:
     return {"dataset_id": dataset_id, "rows": dataset["rows"], **result}
 
 
+@app.get("/tools")
+def list_tools() -> dict:
+    """已注册工具、白名单与预算；供前端步骤面板与排障查看，只读不执行。"""
+    cfg = tools.settings()
+    return {
+        "tools": tools.all_tools(set(cfg.get("allow") or [])),
+        "kinds": tools.kinds(),
+        "allow": [str(name) for name in cfg.get("allow") or []],
+        "max_steps": int(cfg.get("max_steps", 6)),
+        "max_rows_per_step": int(cfg.get("max_rows_per_step", 200)),
+    }
+
+
 @app.post("/ask")
 def ask(payload: dict = Body(...)) -> dict:
     """提问 →（模型）→ SQL → 结果表；模型不可用或 SQL 不合法时降级，HTTP 仍 200。"""
@@ -115,6 +129,9 @@ def ask(payload: dict = Body(...)) -> dict:
         raise HTTPException(status_code=404, detail="数据集不存在")
     if not question:
         raise HTTPException(status_code=400, detail="问题不能为空")
+    if config.ENABLE_AGENT:
+        # P13：/ask 走 agent 循环；关掉 ENABLE_AGENT 就落到下面 P3 的单跳通道（调试与降级用）
+        return asdict(agent.run(question, str(payload.get("session_id") or "") or None, dataset_id))
     base = {
         "task_id": f"t_{uuid4().hex[:8]}",
         "dataset_id": dataset_id,

@@ -18,6 +18,12 @@ GOOD_SQL = "SELECT region, sum(amount) AS total FROM ds_d_test GROUP BY 1 ORDER 
 QUESTION = {"dataset_id": "d_test", "question": "各区域销售额"}
 
 
+@pytest.fixture(autouse=True)
+def p3_single_hop(monkeypatch):
+    """钉住 P3 单跳通道：P13 起 /ask 默认走 agent，本文件验的是 ENABLE_AGENT=false 的降级路径。"""
+    monkeypatch.setattr(config, "ENABLE_AGENT", False)
+
+
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DATA_DIR", tmp_path)
