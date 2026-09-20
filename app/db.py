@@ -1,6 +1,6 @@
 # 文件：app/db.py
 # 作用：DuckDB 的唯一出口：登记数据集表、执行查询 SQL（守卫/超时/行数上限）、描述统计与异常检测
-# 阶段：P0 骨架与契约冻结（守卫、超时、行数上限与统计在 P2 补全）
+# 阶段：P0 骨架与契约冻结（守卫、超时、行数上限与统计在 P2 补全；A 类补丁加 drop_table）
 # 依赖：duckdb、pandas、threading、app/config.py
 from __future__ import annotations
 
@@ -40,6 +40,12 @@ def register_table(dataset_id: str, df) -> str:
         conn.execute(f'CREATE OR REPLACE TABLE "{name}" AS SELECT * FROM _incoming')
         conn.unregister("_incoming")
     return name
+
+
+def drop_table(dataset_id: str) -> None:
+    """删掉数据集在 DuckDB 里的表（K-015，幂等）；查询路径永远不碰这条写连接。"""
+    with duckdb.connect(str(config.DUCKDB_PATH)) as conn:
+        conn.execute(f'DROP TABLE IF EXISTS "{table_name(dataset_id)}"')
 
 
 def exec_sql(sql: str, limit: int = DEFAULT_LIMIT, timeout_s: int = DEFAULT_TIMEOUT_S) -> dict:

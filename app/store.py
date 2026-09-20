@@ -1,6 +1,6 @@
 # 文件：app/store.py
 # 作用：SQLite 元数据层：建表与读写，所有元数据只经这里落盘
-# 阶段：P0 骨架与契约冻结（扩展阶段在此追加新表）
+# 阶段：P0 骨架与契约冻结（扩展阶段在此追加新表；A 类补丁加 tasks 写入与数据集删除）
 # 依赖：标准库 sqlite3、app/config.py
 from __future__ import annotations
 
@@ -100,6 +100,47 @@ def get_dataset(dataset_id: str) -> dict | None:
     result["profile"] = json.loads(result.pop("profile_json") or "{}")
     result["clean_log"] = json.loads(result["clean_log"] or "[]")
     return result
+
+
+def insert_task(task: dict) -> None:
+    """写一条提问任务（K-005）；status 由 degraded 是否有内容决定，写失败只记日志，不拖垮提问。"""
+    try:
+        ensure_tables()
+        degraded = [str(item) for item in task.get("degraded") or []]
+        with closing(connect()) as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO tasks "
+                "(id, dataset_id, session_id, kind, question, sql, status, degraded_json, error) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    task.get("id"),
+                    task.get("dataset_id"),
+                    task.get("session_id") or "",
+                    task.get("kind") or "ask",
+                    task.get("question") or "",
+                    task.get("sql") or "",
+                    "degraded" if degraded else "ok",
+                    json.dumps(degraded, ensure_ascii=False),
+                    task.get("error") or "",
+                ),
+            )
+            conn.commit()
+    except sqlite3.Error as exc:
+        logger.warning("任务写入失败(%s)：%s", task.get("id"), exc)
+
+
+def delete_dataset(dataset_id: str) -> bool:
+    """删掉数据集元数据及其任务与步骤流水（K-015），返回是否删到了行。"""
+    ensure_tables()
+    with closing(connect()) as conn:
+        conn.execute(
+            "DELETE FROM agent_steps WHERE task_id IN (SELECT id FROM tasks WHERE dataset_id = ?)",
+            (dataset_id,),
+        )
+        conn.execute("DELETE FROM tasks WHERE dataset_id = ?", (dataset_id,))
+        cursor = conn.execute("DELETE FROM datasets WHERE id = ?", (dataset_id,))
+        conn.commit()
+    return cursor.rowcount > 0
 
 
 def insert_agent_step(task_id: str, step: dict) -> None:

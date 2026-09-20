@@ -1,5 +1,5 @@
 # 文件：tests/test_p1_ingest.py
-# 作用：P1 数据摄入验收测试：清洗、编码、Excel、拒绝条件与画像路由
+# 作用：P1 数据摄入验收测试：清洗、编码、Excel、拒绝条件与画像路由；A 类补丁加删除数据集与上传失败清理（K-015）
 # 阶段：P1 数据摄入
 # 依赖：pytest、pandas、fastapi.testclient、app.ingest
 from __future__ import annotations
@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from app import config
+from app import config, db
 from app.main import app
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -83,3 +83,30 @@ def test_broken_xlsx_returns_readable_error(client):
 def test_missing_dataset_profile_is_404(client):
     response = client.get("/datasets/d_missing/profile")
     assert response.status_code == 404
+
+
+def test_delete_dataset_removes_table_metadata_and_source_file(client, tmp_path):
+    """K-015：删数据集要把表、元数据、上传文件三份都收走；再删一次是 404。"""
+    with (FIXTURES / "dirty.csv").open("rb") as handle:
+        body = client.post("/datasets", files={"file": ("dirty.csv", handle, "text/csv")}).json()
+    dataset_id = body["dataset_id"]
+    assert len(list((tmp_path / "files").glob("upload_*"))) == 1
+
+    response = client.delete(f"/datasets/{dataset_id}")
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "dataset_id": dataset_id, "table": body["table"], "deleted": True, "removed_source": True,
+    }
+    assert client.get("/datasets").json() == []
+    assert client.get(f"/datasets/{dataset_id}/profile").status_code == 404
+    assert list((tmp_path / "files").glob("upload_*")) == []
+    with db.connect(read_only=True) as conn:
+        tables = [row[0] for row in conn.execute("SELECT table_name FROM information_schema.tables").fetchall()]
+    assert body["table"] not in tables
+    assert client.delete(f"/datasets/{dataset_id}").status_code == 404
+
+
+def test_failed_ingest_leaves_no_upload_file(client, tmp_path):
+    """K-015：清洗失败的上传文件要当场删掉，否则 data/files 只增不减。"""
+    assert client.post("/datasets", files={"file": ("broken.xlsx", b"not an xlsx")}).status_code == 400
+    assert list((tmp_path / "files").glob("upload_*")) == []

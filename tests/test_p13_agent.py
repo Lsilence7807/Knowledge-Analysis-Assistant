@@ -1,5 +1,5 @@
 # 文件：tests/test_p13_agent.py
-# 作用：P13 Agent 循环验收测试：多跳/单跳、步骤落库、白名单与异常、单步截断、回落 P3、/tools
+# 作用：P13 Agent 循环验收测试：多跳/单跳、步骤落库、白名单与异常、单步截断、回落 P3、/tools；A 类补丁加 tasks 落库（K-005）
 # 阶段：P13 Agent 循环与工具调用
 # 依赖：json、contextlib、pytest、pandas、fastapi.testclient、app.agent、app.llm、app.store、app.tools
 from __future__ import annotations
@@ -142,6 +142,26 @@ def test_steps_are_persisted_matching_response(client, monkeypatch):
     assert len(rows) == len(body["steps"]) == 2
     assert [row["n"] for row in rows] == [1, 2]
     assert all(row["ok"] == 1 and row["tool"] == "run_sql" for row in rows)
+
+
+def test_ask_writes_task_row(client, monkeypatch):
+    """K-005：agent 路径也要落 tasks，带 session_id、问题原文与 degraded 快照。"""
+    _make_dataset(SAMPLE)
+    monkeypatch.setattr(llm, "chat_tools", _model(_call("run_sql", sql=GOOD_SQL), _final("一步拿到结论")))
+    body = client.post("/ask", json={**QUESTION, "session_id": "s_1"}).json()
+    with closing(store.connect()) as conn:
+        rows = conn.execute(
+            "SELECT id, dataset_id, session_id, kind, question, sql, status, degraded_json, error "
+            "FROM tasks WHERE id = ?",
+            (body["task_id"],),
+        ).fetchall()
+    assert len(rows) == 1
+    row = rows[0]
+    assert (row["id"], row["dataset_id"], row["session_id"], row["kind"]) == (
+        body["task_id"], "d_test", "s_1", "ask"
+    )
+    assert row["question"] == QUESTION["question"] and row["sql"] == GOOD_SQL
+    assert row["status"] == "ok" and json.loads(row["degraded_json"]) == [] and row["error"] == ""
 
 
 def test_tool_outside_whitelist_is_refused_and_loop_continues(client, monkeypatch):

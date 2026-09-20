@@ -1,6 +1,6 @@
 # 文件：app/main.py
 # 作用：HTTP 路由与编排，唯一装配点；禁止在此出现 pandas 调用与 SQL 字符串
-# 阶段：P0 骨架与契约冻结（P1 加数据集路由，P2 加查询路由，P3 加提问路由，P13 加 /tools 与 agent 路径，P4 加 /insight 并把结论并入 /ask，P5 加静态前端与 /settings/models）
+# 阶段：P0 骨架与契约冻结（P1 加数据集路由，P2 加查询路由，P3 加提问路由，P13 加 /tools 与 agent 路径，P4 加 /insight 并把结论并入 /ask，P5 加静态前端与 /settings/models；A 类补丁加 /ask 落 tasks 与 DELETE /datasets/{id}）
 # 依赖：FastAPI、app/{agent,config,db,ingest,insight,llm,models,nlu,store,tools}.py
 from __future__ import annotations
 
@@ -58,6 +58,8 @@ async def upload_dataset(file: UploadFile = File(...)) -> dict:
     try:
         return ingest.ingest_file(target, file.filename or target.name)
     except ingest.IngestError as exc:
+        # 清洗失败就没有数据集指向这个文件，留着只会变孤儿（K-015）
+        target.unlink(missing_ok=True)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
@@ -81,6 +83,26 @@ def dataset_profile(dataset_id: str) -> dict:
         "profile": dataset["profile"],
         "clean_log": dataset["clean_log"],
         "table_version": dataset["table_version"],
+    }
+
+
+@app.delete("/datasets/{dataset_id}")
+def drop_dataset(dataset_id: str) -> dict:
+    """删除数据集：DuckDB 表、原始上传文件与元数据一起清（K-015 最小版）；不存在返回 404。"""
+    dataset = store.get_dataset(dataset_id)
+    if dataset is None:
+        raise HTTPException(status_code=404, detail="数据集不存在")
+    source = Path(str(dataset.get("source_path") or ""))
+    removed_source = source.is_file()
+    if removed_source:
+        source.unlink(missing_ok=True)
+    db.drop_table(dataset_id)
+    store.delete_dataset(dataset_id)
+    return {
+        "dataset_id": dataset_id,
+        "table": dataset["table_name"],
+        "deleted": True,
+        "removed_source": removed_source,
     }
 
 
@@ -125,6 +147,7 @@ def ask(payload: dict = Body(...)) -> dict:
     """提问 →（模型）→ SQL → 结果表 → 结论；模型不可用或 SQL 不合法时降级，HTTP 仍 200。"""
     dataset_id = str(payload.get("dataset_id") or "")
     question = str(payload.get("question") or "").strip()
+    session_id = str(payload.get("session_id") or "")
     dataset = store.get_dataset(dataset_id)
     if dataset is None:
         raise HTTPException(status_code=404, detail="数据集不存在")
@@ -133,7 +156,7 @@ def ask(payload: dict = Body(...)) -> dict:
     profile = {**dataset["profile"], "table": dataset["table_name"]}
     if config.ENABLE_AGENT:
         # P13：/ask 走 agent 循环；关掉 ENABLE_AGENT 就落到下面 P3 的单跳通道（调试与降级用）
-        body = asdict(agent.run(question, str(payload.get("session_id") or "") or None, dataset_id))
+        body = asdict(agent.run(question, session_id or None, dataset_id))
     else:
         base = {
             "task_id": f"t_{uuid4().hex[:8]}",
@@ -172,7 +195,21 @@ def ask(payload: dict = Body(...)) -> dict:
                     "row_count": result["row_count"],
                     "truncated": result["truncated"],
                 }
-    return _attach_insight(body, question, dataset)
+    body = _attach_insight(body, question, dataset)
+    # K-005：Agent 路径原本不写 tasks，提问历史只留在响应里；这里落一行，degraded 也记进去
+    degraded = body.get("degraded") or []
+    store.insert_task({
+        "id": body.get("task_id"),
+        "dataset_id": dataset_id,
+        "session_id": session_id,
+        "kind": "ask",
+        "question": question,
+        "sql": body.get("sql") or "",
+        "degraded": degraded,
+        # message 在成功时是模型的收尾说明，只有降级时它才是错误原因，别混进 error 列
+        "error": (body.get("message") or "") if degraded else "",
+    })
+    return body
 
 
 @app.post("/insight")

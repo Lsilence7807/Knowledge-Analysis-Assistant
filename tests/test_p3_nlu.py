@@ -1,10 +1,11 @@
 # 文件：tests/test_p3_nlu.py
-# 作用：P3 自然语言转 SQL 验收测试：成功路径、缺密钥、非法输出、危险 SQL 的降级
+# 作用：P3 自然语言转 SQL 验收测试：成功路径、缺密钥、非法输出、危险 SQL 的降级；A 类补丁加降级时的 tasks 记录（K-005）
 # 阶段：P3 自然语言转 SQL
 # 依赖：pytest、pandas、fastapi.testclient、app.llm、app.store
 from __future__ import annotations
 
 import json
+from contextlib import closing
 
 import pandas as pd
 import pytest
@@ -106,6 +107,11 @@ def test_ask_without_key_degrades_and_service_stays_usable(client, monkeypatch):
     assert body["degraded"] == ["query:llm"]
     assert body["sql"] == "" and body["rows"] == []
     assert "模型密钥" in body["message"] and "config/local.json" in body["message"]
+    with closing(store.connect()) as conn:
+        row = conn.execute(
+            "SELECT status, degraded_json FROM tasks WHERE id = ?", (body["task_id"],)
+        ).fetchone()
+    assert row["status"] == "degraded" and json.loads(row["degraded_json"]) == ["query:llm"]
     kept = client.post("/query", json={"sql": "SELECT count(*) AS n FROM ds_d_test"})
     assert kept.json()["rows"] == [[21]]
 
