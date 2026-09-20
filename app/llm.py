@@ -98,11 +98,35 @@ def chat_tools(messages: list[dict], tools: list[dict], model_id: str | None = N
     return {"content": message.content or "", "tool_calls": calls}
 
 
-def _client(model: dict):
-    """建 OpenAI 兼容客户端；_complete 里的旧副本按阶段隔离规则不动，新代码走这里。"""
-    from openai import OpenAI
+async def stream_text(system: str, user: str, model_id: str | None = None):
+    """流式取模型文本：逐段 yield 增量；调用失败抛 LLMError（不重试——吐出去的片段收不回来）。
 
-    return OpenAI(
+    设计里的「流式回调」落成异步生成器：调用方 async for 增量取片段，断连时取消协程能真把上游请求掐掉，
+    这是这里用异步客户端而不是同步客户端的原因。
+    """
+    model = ensure_ready(model_id)
+    messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+    try:
+        stream = await _client(model, async_=True).chat.completions.create(
+            model=model["model"], messages=messages, stream=True
+        )
+        async for chunk in stream:
+            piece = (chunk.choices[0].delta.content or "") if chunk.choices else ""
+            if piece:
+                yield piece
+    except Exception as exc:  # 网络、鉴权、限流一律降级，与 chat_json 同口径
+        raise LLMError(f"模型调用失败：{_clip(exc)}") from exc
+
+
+def _client(model: dict, async_: bool = False):
+    """建 OpenAI 兼容客户端；_complete 里的旧副本按阶段隔离规则不动，新代码走这里。
+
+    async_=True 给 SSE 路径：断连时 Starlette 取消协程，httpx 会真把上游请求掐掉。
+    """
+    from openai import AsyncOpenAI, OpenAI
+
+    factory = AsyncOpenAI if async_ else OpenAI
+    return factory(
         api_key=config.api_key(model),
         base_url=model.get("base_url"),
         timeout=model.get("timeout_s", 30),
