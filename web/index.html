@@ -53,6 +53,7 @@
     <input id="file" type="file" accept=".csv,.xlsx,.xls">
     <button id="upload">上传</button>
     <select id="dataset"></select>
+    <button id="delete-dataset">删除数据集</button>
     <span id="dataset-state" class="muted"></span>
   </div>
 </section>
@@ -192,6 +193,20 @@ async function upload() {
   say("banner", `已上传 ${result.dataset_id}：${result.rows} 行 × ${result.cols} 列`);
 }
 
+async function deleteDataset() {
+  const dataset_id = $("dataset").value;
+  if (!dataset_id) throw new Error("先选一个数据集");
+  if (!confirm(`删除数据集 ${dataset_id}？DuckDB 表、上传文件与提问记录会一起清掉`)) return;
+  const result = await api(`/datasets/${dataset_id}`, { method: "DELETE" });
+  await loadDatasets();
+  // 正看着的就是被删的数据集时，把结果区一并清掉，免得留着已删数据的表
+  if (last && last.dataset_id === dataset_id) {
+    last = null;
+    render({ dataset_id, sql: "", steps: [], insight: null, columns: [], rows: [], row_count: 0, degraded: [] });
+  }
+  say("banner", `已删除 ${result.dataset_id}（表 ${result.table}）`);
+}
+
 // ---- 提问与结果 ----
 let last = null;
 let chart = null;
@@ -294,6 +309,7 @@ function renderChart(columns, rows) {
   $("m-save").addEventListener("click", () => run(() => saveProfile($("m-key").value || null)));
   $("m-clear").addEventListener("click", () => run(() => saveProfile("")));
   $("upload").addEventListener("click", () => run(upload));
+  $("delete-dataset").addEventListener("click", () => run(deleteDataset));
   $("ask").addEventListener("click", () => run(ask));
   $("chart-type").addEventListener("change", () => { if (last) renderChart(last.columns || [], last.rows || []); });
   window.addEventListener("resize", () => { if (chart) chart.resize(); });

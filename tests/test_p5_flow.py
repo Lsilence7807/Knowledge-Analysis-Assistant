@@ -96,6 +96,14 @@ def test_home_and_static_assets(client):
     assert client.get("/health").json()["status"] == "ok"
 
 
+def test_home_has_delete_dataset_button(client):
+    """页面能删数据集（A 类补丁）：按钮与它调用的 DELETE 方法都在，改前端时别把它删掉。"""
+    home = client.get("/")
+    assert 'id="delete-dataset"' in home.text
+    assert '"DELETE"' in home.text
+    assert '"delete-dataset"' in home.text
+
+
 def test_full_chain_upload_ask_insight(client, monkeypatch):
     dataset_id = _upload(client)["dataset_id"]
     sql = _count_sql()
