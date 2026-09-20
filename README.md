@@ -157,7 +157,7 @@ docs/           设计文档、台账、索引
 | --- | --- |
 | 后端骨架 | FastAPI 官方模板结构：`api/routes` + `api/deps.py` + `core` + `models` + `schemas` + `services` + `alembic` |
 | 语言 / Web | Python 3.12 · FastAPI + uvicorn · pydantic v2 · pydantic-settings |
-| 前端骨架 | React + Vite + TypeScript + Tailwind + shadcn/ui · TanStack Query/Router/Table · ECharts |
+| 前端骨架 | React + Vite + TypeScript + Tailwind + shadcn/ui · TanStack Query/Router/Table · ECharts · assistant-ui（聊天壳，底层 AI SDK runtime） |
 | 数据 | DuckDB（分析）· SQLite + SQLAlchemy + Alembic（元数据）· pandas / numpy · pandera · ydata-profiling |
 | 模型 | LiteLLM（多厂商路由 / 回退 / 结构化输出 / embedding / 成本） |
 | Agent 与记忆 | LangGraph + SqliteSaver checkpointer |
@@ -193,7 +193,7 @@ docs/           设计文档、台账、索引
 
 **已实现**：MVP 七段（P0–P5）+ P6 技能 + P7 知识库 + P8 MCP + P13 Agent + P15 沙箱与指标 + P17 流式 + P21 性能并发契约。
 
-**骨架整改（先做）**：后端按 FastAPI 官方模板的目录与依赖注入重排（`api/routes` + `api/deps.py` + `core` + `models` + `schemas` + `services` + Alembic），前端换成 React + Vite + shadcn/ui 骨架（流式与工具调用用现成组件，API 客户端由 `/openapi.json` 生成），部署补上多阶段镜像与 compose；验收命令与 164 例断言都不动。逐段范围见 `docs/系统总体设计.md` §5 的 F1 / F2 / F10。
+**骨架整改（先做）**：后端按 FastAPI 官方模板的目录与依赖注入重排（`api/routes` + `api/deps.py` + `core` + `models` + `schemas` + `services` + Alembic），前端换成 React + Vite + shadcn/ui 骨架（聊天壳用 assistant-ui，流式与工具调用用现成组件，API 客户端由 `/openapi.json` 生成），部署补上多阶段镜像与 compose；验收命令与 164 例断言都不动。逐段范围见 `docs/系统总体设计.md` §5 的 F1 / F2 / F10。
 
 **框架化改造（进行中，先做）**：把自研实现换成现成框架，接口与验收命令不变——`LiteLLM`（模型层）→ `LangGraph`（Agent 与记忆）→ `LlamaIndex + LanceDB`（检索与向量）→ `SQLAlchemy + Alembic + pydantic-settings`（数据层）→ `sqlglot + RestrictedPython + itsdangerous`（守卫与认证）→ `Langfuse + deepeval`（观测与评测）→ `huey + Docling`（作业与文档）。逐段范围与验收见 `docs/系统总体设计.md` §5「框架化改造（F 段）」，模块映射见同文 §11。
 
