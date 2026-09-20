@@ -16,5 +16,7 @@ ignore = ["B008"]          # FastAPI 的 File(...) / Body(...) 写在默认参�
 "app/insight.py" = ["E501"]
 
 [tool.pytest.ini_options]
+# 仓库根进 sys.path：控制台脚本方式启动（CI 的 `pytest tests -q`）不会自动加 cwd，缺这行 7 个测试模块全 ModuleNotFoundError
+pythonpath = ["."]
 testpaths = ["tests"]
 # 不放 addopts：验收命令自带 -q，叠加会变成 -qq 把汇总行吃掉（K-020）
