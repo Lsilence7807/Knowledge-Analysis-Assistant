@@ -133,6 +133,55 @@ def test_invented_number_lands_in_caveats(client, monkeypatch):
     assert "999999" in caveats and "40" not in caveats
 
 
+def test_cited_findings_are_traced_without_literal_match(client, monkeypatch):
+    """K-009：findings 都给了行号时，合计/环比这类表里没有原文的算式结果不再进 caveats。"""
+    _make_dataset(SAMPLE)
+    reply = {
+        **GOOD_INSIGHT,
+        "summary": "华北 48 最高，环比 -20%，三区合计 132",
+        "findings": [
+            {
+                "title": "华北最高",
+                "detail": "48，环比 -20%，三区合计 132",
+                "metric": "total",
+                "direction": "up",
+                "row": 0,
+                "column": "total",
+            }
+        ],
+    }
+    monkeypatch.setattr(llm, "_complete", _reply(json.dumps(reply, ensure_ascii=False)))
+    body = client.post("/insight", json=QUESTION).json()
+    assert body["insight"]["caveats"] == ["未含退货数据"]
+
+
+def test_cited_row_out_of_range_falls_back_to_literal_check(client, monkeypatch):
+    """引用行号越界等于没引用：回到字面回溯，编造的数字仍进 caveats。"""
+    _make_dataset(SAMPLE)
+    reply = {
+        **GOOD_INSIGHT,
+        "summary": "另有 999999 的异常",
+        "findings": [{**GOOD_INSIGHT["findings"][0], "row": 99}],
+    }
+    monkeypatch.setattr(llm, "_complete", _reply(json.dumps(reply, ensure_ascii=False)))
+    body = client.post("/insight", json=QUESTION).json()
+    assert "999999" in "；".join(body["insight"]["caveats"])
+
+
+def test_table_name_digits_are_not_suspicious(client, monkeypatch):
+    """K-018：表名 `ds_<id>` 里的数字不是结论里的数字。"""
+    _make_dataset(SAMPLE)
+    reply = {
+        **GOOD_INSIGHT,
+        "summary": "华北 48 最高（取自表 ds_d_fc466e97）",
+        "findings": [{"title": "华北最高", "detail": "48", "metric": "total", "direction": "up"}],
+    }
+    monkeypatch.setattr(llm, "_complete", _reply(json.dumps(reply, ensure_ascii=False)))
+    body = client.post("/insight", json=QUESTION).json()
+    caveats = "；".join(body["insight"]["caveats"])
+    assert caveats == "未含退货数据"
+
+
 def test_missing_field_degrades_to_contract(client, monkeypatch):
     _make_dataset(SAMPLE)
     broken = {key: value for key, value in GOOD_INSIGHT.items() if key != "confidence"}

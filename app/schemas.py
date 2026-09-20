@@ -1,6 +1,6 @@
 # 文件：app/schemas.py
 # 作用：HTTP 边界的 pydantic 模型，接口契约以本文件为准
-# 阶段：P0 骨架与契约冻结（P4 加 Insight，K-013 加请求体模型）
+# 阶段：P0 骨架与契约冻结（P4 加 Insight，K-013 加请求体模型，K-009 给 Finding 加引用字段）
 # 依赖：pydantic
 from __future__ import annotations
 
@@ -23,12 +23,14 @@ class CapabilitiesOut(BaseModel):
 
 
 class Finding(BaseModel):
-    """结果表里读得出的一条事实。"""
+    """结果表里读得出的一条事实；row/column 指认它读的是结果表的哪一行哪一列（K-009）。"""
 
     title: str
     detail: str = ""
     metric: str = ""
     direction: str = ""
+    row: int | None = None  # 结果表里的行号（0 基）；填了就算这条已追溯到表
+    column: str = ""  # 取数用的列名，仅供参考，不做校验
 
 
 class Suggestion(BaseModel):
