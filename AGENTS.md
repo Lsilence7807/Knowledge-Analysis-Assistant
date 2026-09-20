@@ -34,7 +34,7 @@
 - **v3.1 骨架改造（F1 后端骨架已落地）**：Python 代码在 `backend/app/`（`api/` 路由 + `core/` 配置与执行器 + `services/` 业务 + `providers/` 能力 + `schemas/` 边界模型），`pythonpath=["backend"]` 兜住所有 `import app.*`；前端源码在 `frontend/`（F2）、构建产物在 `web/dist`（gitignore）。
 
 - 路径一律锚在 `backend/app/core/config.py` 的 `BASE_DIR`（仓库根：`Path(__file__).resolve().parents[3]`），**禁止依赖当前工作目录**。
-- 禁止硬编码绝对路径：盘符、`/Users/...`、`/home/...`、用户名、机器名、`%APPDATA%` 字面量都不许出现在代码与 `config/*.json` 里；桌面端的 `%APPDATA%` 只准出现在 `backend/app/core/config.py` 那一个切换点（P12）。
+- 禁止硬编码绝对路径：盘符、`/Users/...`、`/home/...`、用户名、机器名、`%APPDATA%` 字面量都不许出现在代码与 `config/*.json` 里。
 - 新增配置、目录、基准文件的路径先加进 `backend/app/core/config.py`，其它模块只从 `config` 取，不在模块里自己拼。
 - 测试夹具用 `Path(__file__).parent`，项目外的临时目录用 `tempfile`；不许假定 cwd 是项目根。
 - 起子进程显式给 `cwd`（范例：`backend/app/providers/mcp_client.py` 给 `BASE_DIR`、`backend/app/providers/skills.py` 给技能目录）。
