@@ -63,7 +63,7 @@
 
 **交互**
 
-- 单页前端（v3.1 起换 React + shadcn/ui 骨架）：上传 → 选数据集 → 提问 → SQL（可折叠）→ 步骤 → 结论卡片 → 结果表 → 图表
+- 前端（v3.1 起换 React + shadcn/ui 骨架，顶部导航栏切页）：首页只放 上传 → 提问 → 结论卡片 → 结果表 → 图表；模型（API）配置、知识库、技能、MCP、评测、作业各自成页
 - SSE 流式：`plan → sql → row_count → token* → insight → trace → done`，客户端断开即取消上游模型调用
 - ECharts 走本地资源离线可用，柱状 / 折线 / 饼图可切换
 
