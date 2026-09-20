@@ -1,6 +1,16 @@
 {
   "max_steps": 6,
-  "allow": ["run_sql", "describe_stats", "detect_anomalies"],
-  "timeouts": { "run_sql": 10, "describe_stats": 15, "detect_anomalies": 15 },
+  "allow": [
+    "run_sql",
+    "describe_stats",
+    "detect_anomalies",
+    "list_skills",
+    "use_skill"
+  ],
+  "timeouts": {
+    "run_sql": 10,
+    "describe_stats": 15,
+    "detect_anomalies": 15
+  },
   "max_rows_per_step": 200
 }

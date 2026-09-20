@@ -286,8 +286,16 @@ def test_agent_disabled_falls_back_to_p3_single_hop(client, monkeypatch):
 
 def test_tools_route_lists_registry_and_whitelist(client):
     body = client.get("/tools").json()
-    assert [item["function"]["name"] for item in body["tools"]] == ["describe_stats", "detect_anomalies", "run_sql"]
-    assert body["allow"] == ["run_sql", "describe_stats", "detect_anomalies"]
+    # 工具清单按名字排序；2026-09-20 加了两个技能工具（清 K-028）
+    assert [item["function"]["name"] for item in body["tools"]] == [
+        "describe_stats",
+        "detect_anomalies",
+        "list_skills",
+        "run_sql",
+        "use_skill",
+    ]
+    # 2026-09-20：技能工具进默认白名单（清 K-028），这条断言跟着文件走
+    assert body["allow"] == ["run_sql", "describe_stats", "detect_anomalies", "list_skills", "use_skill"]
     assert body["max_steps"] == 6 and body["max_rows_per_step"] == 200
     assert body["kinds"]["run_sql"] == "read"
 
