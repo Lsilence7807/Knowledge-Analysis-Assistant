@@ -17,4 +17,4 @@ ignore = ["B008"]          # FastAPI 的 File(...) / Body(...) 写在默认参�
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+# 不放 addopts：验收命令自带 -q，叠加会变成 -qq 把汇总行吃掉（K-020）
