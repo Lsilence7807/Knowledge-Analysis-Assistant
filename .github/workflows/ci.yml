@@ -1,0 +1,24 @@
+# 文件：.github/workflows/ci.yml
+# 作用：push / PR 时在 GitHub runner 上跑质量门与全量验收（锁版本装依赖 → ruff → pytest）
+# 阶段：P0 起（2026-09-20 首版）
+# 依赖：requirements.lock（锁版本装依赖；requirements.txt 只是带 why 的声明表）
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 装依赖（锁版本）
+        run: pip install -r requirements.lock
+      - name: ruff 静态检查
+        run: ruff check app tests
+      - name: ruff 格式检查
+        run: ruff format --check app tests
+      - name: 验收测试
+        run: pytest tests -q
