@@ -41,6 +41,8 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DATA_DIR", tmp_path)
     monkeypatch.setattr(config, "SQLITE_PATH", tmp_path / "meta.sqlite")
     monkeypatch.setattr(config, "DUCKDB_PATH", tmp_path / "analytics.duckdb")
+    # 页面写过 config/local.json 的机器上，不隔离这个路径就会拿真实密钥出网：本文件测的是替身，不是本机密钥
+    monkeypatch.setattr(config, "LOCAL_SETTINGS", tmp_path / "local.json")
     with TestClient(app) as test_client:
         yield test_client
 
