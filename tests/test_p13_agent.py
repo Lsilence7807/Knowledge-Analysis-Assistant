@@ -19,6 +19,17 @@ BIG = pd.DataFrame({"region": ["华东", "华南"] * 250, "amount": list(range(5
 QUESTION = {"dataset_id": "d_test", "question": "先找下降最多的产品，再按渠道拆开"}
 GOOD_SQL = 'SELECT region, sum(amount) AS total FROM ds_d_test GROUP BY 1 ORDER BY 2 DESC'
 SPLIT_SQL = 'SELECT region, count(*) AS n FROM ds_d_test GROUP BY 1'
+INSIGHT = json.dumps(
+    {
+        "summary": "华东区降幅最大，集中在直营",
+        "findings": [{"title": "华东下降", "detail": "40", "metric": "total", "direction": "down"}],
+        "anomalies": [],
+        "suggestions": [{"action": "核查渠道库存", "rationale": "降幅集中"}],
+        "confidence": "medium",
+        "caveats": [],
+    },
+    ensure_ascii=False,
+)
 
 
 @pytest.fixture()
@@ -28,6 +39,8 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DUCKDB_PATH", tmp_path / "analytics.duckdb")
     monkeypatch.setattr(config, "ENABLE_AGENT", True)
     monkeypatch.setattr(config, "LLM_API_KEY", "test-key")
+    # P4 起 /ask 还会走一次 insight 的 chat_json（这里给合规替身，免得测试出网）
+    monkeypatch.setattr(llm, "_complete", lambda messages, model: INSIGHT)
     with TestClient(app) as test_client:
         yield test_client
 
@@ -68,6 +81,18 @@ def _model(*replies: dict):
         return replies[min(len(seen) - 1, len(replies) - 1)]
 
     fake.seen = seen
+    return fake
+
+
+def _reply(*payloads: str):
+    """模型替身：按顺序吐给定文本，重复用最后一条（给 insight 那一跳用）。"""
+    calls: list = []
+
+    def fake(messages, model):
+        calls.append(messages)
+        return payloads[min(len(calls) - 1, len(payloads) - 1)]
+
+    fake.calls = calls
     return fake
 
 
@@ -204,7 +229,7 @@ def test_model_unavailable_degrades_without_crashing(client, monkeypatch):
 def test_agent_disabled_falls_back_to_p3_single_hop(client, monkeypatch):
     _make_dataset(SAMPLE)
     monkeypatch.setattr(config, "ENABLE_AGENT", False)
-    monkeypatch.setattr(llm, "_complete", lambda messages, model: json.dumps({"sql": GOOD_SQL}))
+    monkeypatch.setattr(llm, "_complete", _reply(json.dumps({"sql": GOOD_SQL}), INSIGHT))
     body = client.post("/ask", json=QUESTION).json()
     assert body["degraded"] == [] and body["steps"] == []
     assert body["sql"] == GOOD_SQL and body["row_count"] == 3

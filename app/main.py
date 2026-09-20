@@ -1,7 +1,7 @@
 # 文件：app/main.py
 # 作用：HTTP 路由与编排，唯一装配点；禁止在此出现 pandas 调用与 SQL 字符串
-# 阶段：P0 骨架与契约冻结（P1 加数据集路由，P2 加查询路由，P3 加提问路由，P13 加 /tools 与 agent 路径）
-# 依赖：FastAPI、app/{agent,config,db,ingest,llm,nlu,store,tools}.py
+# 阶段：P0 骨架与契约冻结（P1 加数据集路由，P2 加查询路由，P3 加提问路由，P13 加 /tools 与 agent 路径，P4 加 /insight 并把结论并入 /ask）
+# 依赖：FastAPI、app/{agent,config,db,ingest,insight,llm,nlu,store,tools}.py
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
@@ -12,7 +12,7 @@ from uuid import uuid4
 
 from fastapi import Body, FastAPI, File, HTTPException, UploadFile
 
-from app import agent, config, db, ingest, llm, nlu, registry, store, tools
+from app import agent, config, db, ingest, insight, llm, nlu, registry, store, tools
 from app.schemas import CapabilitiesOut, HealthOut
 
 
@@ -121,7 +121,7 @@ def list_tools() -> dict:
 
 @app.post("/ask")
 def ask(payload: dict = Body(...)) -> dict:
-    """提问 →（模型）→ SQL → 结果表；模型不可用或 SQL 不合法时降级，HTTP 仍 200。"""
+    """提问 →（模型）→ SQL → 结果表 → 结论；模型不可用或 SQL 不合法时降级，HTTP 仍 200。"""
     dataset_id = str(payload.get("dataset_id") or "")
     question = str(payload.get("question") or "").strip()
     dataset = store.get_dataset(dataset_id)
@@ -129,42 +129,78 @@ def ask(payload: dict = Body(...)) -> dict:
         raise HTTPException(status_code=404, detail="数据集不存在")
     if not question:
         raise HTTPException(status_code=400, detail="问题不能为空")
+    profile = {**dataset["profile"], "table": dataset["table_name"]}
     if config.ENABLE_AGENT:
         # P13：/ask 走 agent 循环；关掉 ENABLE_AGENT 就落到下面 P3 的单跳通道（调试与降级用）
-        return asdict(agent.run(question, str(payload.get("session_id") or "") or None, dataset_id))
-    base = {
-        "task_id": f"t_{uuid4().hex[:8]}",
-        "dataset_id": dataset_id,
-        "sql": "",
-        "columns": [],
-        "rows": [],
-        "row_count": 0,
-        "truncated": False,
-        "steps": [],
-        "cached": False,
-        "reused_sql": False,
-        "degraded": [],
-        "message": "",
-    }
-    profile = {**dataset["profile"], "table": dataset["table_name"]}
-    try:
-        sql = nlu.to_sql(question, profile, [])
-    except (llm.LLMUnavailable, llm.LLMError, nlu.NLUError) as exc:
-        # 模型这条路整体降级：手写 SQL 的 /query 不受影响，用户仍能拿到结果
-        return {**base, "degraded": ["query:llm"], "message": str(exc)}
+        body = asdict(agent.run(question, str(payload.get("session_id") or "") or None, dataset_id))
+    else:
+        base = {
+            "task_id": f"t_{uuid4().hex[:8]}",
+            "dataset_id": dataset_id,
+            "sql": "",
+            "columns": [],
+            "rows": [],
+            "row_count": 0,
+            "truncated": False,
+            "steps": [],
+            "cached": False,
+            "reused_sql": False,
+            "degraded": [],
+            "message": "",
+        }
+        try:
+            sql = nlu.to_sql(question, profile, [])
+        except (llm.LLMUnavailable, llm.LLMError, nlu.NLUError) as exc:
+            # 模型这条路整体降级：手写 SQL 的 /query 不受影响，用户仍能拿到结果
+            body = {**base, "degraded": ["query:llm"], "message": str(exc)}
+        else:
+            try:
+                result = db.exec_sql(sql)
+            except db.SQLRejected as exc:
+                body = {
+                    **base,
+                    "degraded": ["query:llm"],
+                    "message": f"模型给出的 SQL 未通过校验，已拒绝执行：{exc}",
+                }
+            else:
+                body = {
+                    **base,
+                    "sql": result["sql"],
+                    "columns": result["columns"],
+                    "rows": result["rows"],
+                    "row_count": result["row_count"],
+                    "truncated": result["truncated"],
+                }
+    return _attach_insight(body, question, dataset)
+
+
+@app.post("/insight")
+def explain(payload: dict = Body(...)) -> dict:
+    """对一条 SQL 的结果表出结论；模型不可用时 insight 为空并记 degraded，HTTP 仍 200。"""
+    dataset_id = str(payload.get("dataset_id") or "")
+    question = str(payload.get("question") or "").strip()
+    sql = str(payload.get("sql") or "").strip()
+    dataset = store.get_dataset(dataset_id)
+    if dataset is None:
+        raise HTTPException(status_code=404, detail="数据集不存在")
+    if not sql:
+        raise HTTPException(status_code=400, detail="需要 sql：/insight 解读的是查询结果")
     try:
         result = db.exec_sql(sql)
     except db.SQLRejected as exc:
-        return {
-            **base,
-            "degraded": ["query:llm"],
-            "message": f"模型给出的 SQL 未通过校验，已拒绝执行：{exc}",
-        }
-    return {
-        **base,
-        "sql": result["sql"],
-        "columns": result["columns"],
-        "rows": result["rows"],
-        "row_count": result["row_count"],
-        "truncated": result["truncated"],
-    }
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _attach_insight({"dataset_id": dataset_id, **result, "degraded": [], "message": ""}, question, dataset)
+
+
+def _attach_insight(body: dict, question: str, dataset: dict) -> dict:
+    """给结果表补 insight：没有行就不解读；模型失败只追加 degraded，绝不改表格结果。"""
+    body.setdefault("insight", None)
+    if not body.get("rows"):
+        return body
+    profile = {**dataset["profile"], "table": dataset["table_name"]}
+    try:
+        body["insight"] = insight.summarize(question, body, profile, []).model_dump()
+    except insight.InsightError as exc:
+        body["degraded"] = [*body.get("degraded", []), exc.code]
+        body["message"] = body.get("message") or str(exc)
+    return body

@@ -73,3 +73,14 @@ def _agent_capability():
 
 
 register("agent", _agent_capability)
+
+
+def _insight_capability():
+    """insight 能力：有密钥才算可用，返回 insight.summarize。"""
+    from app import insight, llm
+
+    llm.ensure_ready()
+    return insight.summarize
+
+
+register("insight", _insight_capability)

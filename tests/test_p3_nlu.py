@@ -16,6 +16,18 @@ from app.main import app
 SAMPLE = pd.DataFrame({"region": ["华东", "华南", "华北"] * 7, "amount": [10, 11, 12] * 7})
 GOOD_SQL = "SELECT region, sum(amount) AS total FROM ds_d_test GROUP BY 1 ORDER BY 2 DESC"
 QUESTION = {"dataset_id": "d_test", "question": "各区域销售额"}
+# P4 起 /ask 在同一次请求里还会走一次 insight 的 chat_json，模型替身要能答这一跳
+INSIGHT = json.dumps(
+    {
+        "summary": "华北最高",
+        "findings": [{"title": "华北最高", "detail": "48", "metric": "total", "direction": "up"}],
+        "anomalies": [],
+        "suggestions": [{"action": "核查华东", "rationale": "最低"}],
+        "confidence": "medium",
+        "caveats": [],
+    },
+    ensure_ascii=False,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -70,7 +82,9 @@ def _reply(*payloads: str):
 
 def test_ask_returns_result_table(client, with_key, monkeypatch):
     _make_dataset(SAMPLE)
-    monkeypatch.setattr(llm, "_complete", _reply(json.dumps({"sql": GOOD_SQL, "reason": "按区域求和"})))
+    monkeypatch.setattr(
+        llm, "_complete", _reply(json.dumps({"sql": GOOD_SQL, "reason": "按区域求和"}), INSIGHT)
+    )
     response = client.post("/ask", json=QUESTION)
     assert response.status_code == 200
     body = response.json()
@@ -151,7 +165,7 @@ def test_page_key_wins_over_env_and_takes_effect_immediately(client, monkeypatch
     monkeypatch.setattr(config, "LOCAL_SETTINGS", local)
     monkeypatch.setattr(config, "LLM_API_KEY", "env-key")
     assert config.api_key(models.resolve()) == "page-key"
-    monkeypatch.setattr(llm, "_complete", _reply(json.dumps({"sql": GOOD_SQL})))
+    monkeypatch.setattr(llm, "_complete", _reply(json.dumps({"sql": GOOD_SQL}), INSIGHT))
     assert client.post("/ask", json=QUESTION).json()["degraded"] == []
 
 
@@ -192,10 +206,12 @@ def test_page_added_provider_profile_is_used_by_ask(client, monkeypatch, tmp_pat
     monkeypatch.setattr(config, "LOCAL_SETTINGS", local)
     monkeypatch.setattr(config, "LLM_API_KEY", "")
     seen: dict = {}
+    calls: list = []
 
     def fake(messages, model):
         seen.update(model)
-        return json.dumps({"sql": GOOD_SQL})
+        calls.append(messages)
+        return json.dumps({"sql": GOOD_SQL}) if len(calls) == 1 else INSIGHT
 
     monkeypatch.setattr(llm, "_complete", fake)
     body = client.post("/ask", json=QUESTION).json()
