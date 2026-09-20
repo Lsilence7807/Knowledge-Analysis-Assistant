@@ -134,3 +134,25 @@ def test_ask_missing_dataset_is_404(client, with_key, monkeypatch):
 def test_ask_empty_question_is_400(client):
     _make_dataset(SAMPLE)
     assert client.post("/ask", json={"dataset_id": "d_test", "question": "  "}).status_code == 400
+
+
+def test_local_file_key_wins_over_env(client, monkeypatch, tmp_path):
+    """页面写入的本地密钥优先于环境变量，且保存后立即生效（不用重启）。"""
+    _make_dataset(SAMPLE)
+    local = tmp_path / "local.json"
+    local.write_text(json.dumps({"llm_api_key": "file-key"}), encoding="utf-8")
+    monkeypatch.setattr(config, "LOCAL_SETTINGS", local)
+    monkeypatch.setattr(config, "LLM_API_KEY", "env-key")
+    assert config.api_key() == "file-key"
+    monkeypatch.setattr(llm, "_complete", _reply(json.dumps({"sql": GOOD_SQL})))
+    assert client.post("/ask", json=QUESTION).json()["degraded"] == []
+
+
+def test_api_key_falls_back_to_env_when_file_missing_or_broken(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "LLM_API_KEY", "env-key")
+    monkeypatch.setattr(config, "LOCAL_SETTINGS", tmp_path / "missing.json")
+    assert config.api_key() == "env-key"
+    broken = tmp_path / "broken.json"
+    broken.write_text("{半截", encoding="utf-8")
+    monkeypatch.setattr(config, "LOCAL_SETTINGS", broken)
+    assert config.api_key() == "env-key"

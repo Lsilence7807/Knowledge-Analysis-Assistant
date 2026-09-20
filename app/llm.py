@@ -23,8 +23,11 @@ class LLMError(RuntimeError):
 def ensure_ready(model_id: str | None = None) -> dict:
     """取模型 profile 并确认密钥在；缺任一条件抛 LLMUnavailable。"""
     model = models.resolve(model_id)
-    if not config.LLM_API_KEY:
-        raise LLMUnavailable("未配置 LLM_API_KEY，模型能力不可用")
+    if not config.api_key():
+        raise LLMUnavailable(
+            "未配置模型密钥：在页面填一次（P5），或写 config/local.json 的 llm_api_key，"
+            "也可设环境变量 LLM_API_KEY"
+        )
     if model.get("provider") != "openai_compatible":
         raise LLMUnavailable(f"暂不支持的 provider：{model.get('provider')}")
     return model
@@ -59,7 +62,7 @@ def _complete(messages: list[dict], model: dict) -> str:
     from openai import OpenAI
 
     client = OpenAI(
-        api_key=config.LLM_API_KEY,
+        api_key=config.api_key(),
         base_url=model.get("base_url"),
         timeout=model.get("timeout_s", 30),
         max_retries=0,  # 重试策略由 chat_json 统一管，这里不叠一层
