@@ -103,6 +103,15 @@ def test_prompt_skill_returns_body_without_frontmatter(client, tmp_path):
     assert "---" not in result["content"]
 
 
+def test_long_prompt_body_is_capped(client, tmp_path):
+    # 体检发现：正文原本无上限直通模型上下文（脚本输出却有），这里钉住同一个上限
+    _make_skill(tmp_path, "huge", "---\nname: huge\nkind: prompt\n---\n\n" + "口径说明" * 5000)
+    client.post("/skills", json={})
+    result = skills.use_skill("huge")
+    assert len(result["content"]) == skills.MAX_OUTPUT_CHARS
+    assert result["truncated"] is True
+
+
 def test_script_skill_runs_in_subprocess(client, tmp_path):
     _make_skill(tmp_path, "demo_script", SCRIPT_SKILL, {"run.py": SCRIPT_BODY})
     client.post("/skills", json={})

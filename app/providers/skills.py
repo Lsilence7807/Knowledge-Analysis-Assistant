@@ -179,7 +179,16 @@ def use_skill(slug: str, args: list | None = None) -> dict:
     except OSError as exc:
         raise SkillError(f"SKILL.md 读不出来：{exc}") from exc
     if row["kind"] != "script":
-        return {"slug": slug, "kind": row["kind"], "description": row["description"], "content": skill_body(text)}
+        body = skill_body(text)
+        # 正文可能很长（实测有 2 万字符的），与脚本输出同一个上限：截断并标记，别让一次 use_skill 吃掉上下文
+        kept = body[:MAX_OUTPUT_CHARS]
+        return {
+            "slug": slug,
+            "kind": row["kind"],
+            "description": row["description"],
+            "content": kept,
+            "truncated": len(kept) < len(body),
+        }
     # 入口以文件为准（改 frontmatter 不用重新导入），但仍锁在技能目录内
     entry = parse_frontmatter(text).get("entry") or ""
     if not entry:
