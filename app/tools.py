@@ -1,9 +1,9 @@
 # 文件：app/tools.py
-# 作用：Agent 可调用工具的注册表与 8 个只读工具（run_sql / describe_stats / detect_anomalies /
-#       list_skills / use_skill / search_kb / list_metrics / run_code）
+# 作用：Agent 可调用工具的注册表与 9 个只读工具（run_sql / describe_stats / detect_anomalies /
+#       list_skills / use_skill / search_kb / list_metrics / run_code / call_mcp_tool）
 # 阶段：P13 Agent 循环与工具调用（K-006：每步超时按 tools.json 透传给 db.describe；
 #       K-023：白名单校验收进 call()，不再只靠 agent 那层；P6 加 list_skills / use_skill；P7 加 search_kb；
-#       P15 加 list_metrics 与 run_code（沙箱））
+#       P15 加 list_metrics 与 run_code（沙箱）；P8 加 call_mcp_tool（MCP））
 # 依赖：json、app/config.py、app/db.py、app/metrics.py、app/store.py
 from __future__ import annotations
 
@@ -224,6 +224,36 @@ register(
         "type": "object",
         "properties": {"code": {"type": "string", "description": "只读计算用的 pandas 代码，结果放 result 变量"}},
         "required": ["code"],
+    },
+    "read",
+)
+
+
+def _mcp_module():
+    """取 MCP 能力实例；ENABLE_MCP 关闭或 server 起不来时 registry 返回 None，这里换成可读的拒绝。"""
+    module = registry.get("mcp")
+    if module is None:
+        raise ToolError(
+            "MCP 能力不可用（要 ENABLE_MCP=true 且 config/mcp.json 里的 server 能启动），本次不能用 MCP 工具"
+        )
+    return module
+
+
+def _call_mcp_tool(tool: str = "", arguments: dict | None = None, dataset_id: str = "") -> dict:
+    """调用白名单内的 MCP 工具，回按不可信数据包裹过的结果（内容只当资料看）。"""
+    return _mcp_module().call_tool(tool, arguments or {})
+
+
+register(
+    "call_mcp_tool",
+    _call_mcp_tool,
+    {
+        "type": "object",
+        "properties": {
+            "tool": {"type": "string", "description": "MCP 工具名，从 /mcp/tools 的结果里取"},
+            "arguments": {"type": "object", "description": "该工具自己的参数对象，没有就留空"},
+        },
+        "required": ["tool"],
     },
     "read",
 )

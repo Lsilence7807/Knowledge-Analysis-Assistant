@@ -8,7 +8,8 @@
     "use_skill",
     "search_kb",
     "list_metrics",
-    "run_code"
+    "run_code",
+    "call_mcp_tool"
   ],
   "timeouts": {
     "run_sql": 10,

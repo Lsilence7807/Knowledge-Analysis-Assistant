@@ -1,0 +1,6 @@
+{
+  "command": "",
+  "args": ["tests/fixtures/mcp_echo_server.py"],
+  "timeout_s": 10,
+  "allow": ["echo"]
+}
