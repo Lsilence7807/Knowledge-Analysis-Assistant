@@ -2,7 +2,7 @@
 # 作用：HTTP 路由与编排，唯一装配点；禁止在此出现 pandas 调用与 SQL 字符串
 # 阶段：P0 骨架与契约冻结（P1 加数据集路由，P2 加查询路由，P3 加提问路由，P13 加 /tools 与 agent 路径，
 #       P4 加 /insight 并把结论并入 /ask，P5 加静态前端与 /settings/models；A 类补丁加 /ask 落 tasks 与
-#       DELETE /datasets/{id}，K-013 四个路由换 pydantic 请求体）
+#       DELETE /datasets/{id}，K-013 四个路由换 pydantic 请求体，P6 加 /skills）
 # 依赖：FastAPI、app/{agent,config,db,ingest,insight,llm,models,nlu,store,tools}.py
 from __future__ import annotations
 
@@ -153,6 +153,30 @@ def bench_baseline() -> dict:
         return {"available": True, "baseline": json.loads(path.read_text(encoding="utf-8"))}
     except (OSError, json.JSONDecodeError) as exc:
         return {"available": False, "hint": f"基线读不出来：{exc}"}
+
+
+@app.get("/skills")
+def skills_list() -> dict:
+    """已导入技能清单；ENABLE_SKILLS 关闭时 503 并给开启方式，不猜也不返回空列表。"""
+    return {"skills": _skills_capability().list_skills()}
+
+
+@app.post("/skills")
+def skills_import(payload: dict = Body(default={})) -> dict:
+    """导入技能目录（默认 skills/）：解析每个子目录的 SKILL.md 入库，坏的单独跳过。"""
+    module = _skills_capability()
+    try:
+        return module.import_dir(str(payload.get("path") or ""))
+    except module.SkillError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _skills_capability():
+    """取技能能力；开关关闭时 registry 返回 None，这里换成可读的 503（与 /capabilities 口径一致）。"""
+    module = registry.get("skills")
+    if module is None:
+        raise HTTPException(status_code=503, detail="技能能力未启用：设 ENABLE_SKILLS=true 再重启服务")
+    return module
 
 
 @app.post("/ask")

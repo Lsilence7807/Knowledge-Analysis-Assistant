@@ -1,6 +1,6 @@
 # 文件：app/store.py
 # 作用：SQLite 元数据层：建表与读写，所有元数据只经这里落盘
-# 阶段：P0 骨架与契约冻结（扩展阶段在此追加新表；A 类补丁加 tasks 写入与数据集删除）
+# 阶段：P0 骨架与契约冻结（扩展阶段在此追加新表；A 类补丁加 tasks 写入与数据集删除；P6 加 skills 表）
 # 依赖：标准库 sqlite3、app/config.py
 from __future__ import annotations
 
@@ -34,6 +34,9 @@ DDL: tuple[str, ...] = (
     """CREATE TABLE IF NOT EXISTS capability_log (
         id INTEGER PRIMARY KEY AUTOINCREMENT, capability TEXT, event TEXT, detail TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP)""",
+    """CREATE TABLE IF NOT EXISTS skills (
+        id TEXT PRIMARY KEY, slug TEXT UNIQUE, path TEXT, description TEXT,
+        kind TEXT, enabled INTEGER DEFAULT 1, created_at TEXT DEFAULT CURRENT_TIMESTAMP)""",
 )
 
 
@@ -183,3 +186,41 @@ def log_capability(capability: str, event: str, detail: str = "") -> None:
             conn.commit()
     except sqlite3.Error as exc:
         logger.warning("能力流水写入失败(%s/%s)：%s", capability, event, exc)
+
+
+def upsert_skill(skill: dict) -> None:
+    """按 slug 写入或更新一条技能；同一目录重复导入只更新，不产生重复行。"""
+    ensure_tables()
+    with closing(connect()) as conn:
+        conn.execute(
+            "INSERT INTO skills (id, slug, path, description, kind, enabled) VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(slug) DO UPDATE SET path = excluded.path, description = excluded.description, "
+            "kind = excluded.kind, enabled = excluded.enabled",
+            (
+                skill.get("id") or f"sk_{skill.get('slug')}",
+                skill.get("slug"),
+                skill.get("path"),
+                skill.get("description") or "",
+                skill.get("kind") or "prompt",
+                int(bool(skill.get("enabled", 1))),
+            ),
+        )
+        conn.commit()
+
+
+def list_skills() -> list[dict]:
+    """返回已导入的技能，按 slug 排序。"""
+    ensure_tables()
+    with closing(connect()) as conn:
+        rows = conn.execute(
+            "SELECT id, slug, path, description, kind, enabled, created_at FROM skills ORDER BY slug"
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_skill(slug: str) -> dict | None:
+    """按 slug 取一条技能，没有时返回 None。"""
+    ensure_tables()
+    with closing(connect()) as conn:
+        row = conn.execute("SELECT * FROM skills WHERE slug = ?", (slug,)).fetchone()
+    return dict(row) if row else None

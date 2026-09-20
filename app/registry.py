@@ -1,6 +1,6 @@
 # 文件：app/registry.py
 # 作用：能力注册表：新能力的唯一接入点，provider 只在这里被惰性装配
-# 阶段：P0 骨架与契约冻结（P2 注册 stats；P3 注册 query、llm；P13 注册 agent）
+# 阶段：P0 骨架与契约冻结（P2 注册 stats；P3 注册 query、llm；P13 注册 agent；P6 注册 skills，5→6 条）
 # 依赖：标准库 logging
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ CAPABILITIES: dict[str, str] = {
     "agent": "多步工具调用循环（P13）",
     "insight": "结构化结论生成（P4）",
     "llm": "模型可用（缺密钥时为 false）",
+    "skills": "技能库：导入 SKILL.md 并按需取用（P6）",
 }
 
 _FACTORIES: dict[str, Callable[[], Any]] = {}
@@ -96,3 +97,13 @@ def _insight_capability():
 
 
 register("insight", _insight_capability)
+
+
+def _skills_capability():
+    """skills 能力：ENABLE_SKILLS 打开才可用，返回 providers.skills 模块（工具层从这里取用）。"""
+    from app.providers import skills
+
+    return skills if skills.ENABLED else None
+
+
+register("skills", _skills_capability)

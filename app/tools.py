@@ -1,13 +1,13 @@
 # 文件：app/tools.py
-# 作用：Agent 可调用工具的注册表与 3 个只读工具（run_sql / describe_stats / detect_anomalies）
+# 作用：Agent 可调用工具的注册表与 5 个只读工具（run_sql / describe_stats / detect_anomalies / list_skills / use_skill）
 # 阶段：P13 Agent 循环与工具调用（K-006：每步超时按 tools.json 透传给 db.describe；
-#       K-023：白名单校验收进 call()，不再只靠 agent 那层）
+#       K-023：白名单校验收进 call()，不再只靠 agent 那层；P6 加 list_skills / use_skill）
 # 依赖：json、app/config.py、app/db.py、app/store.py
 from __future__ import annotations
 
 import json
 
-from app import config, db, store
+from app import config, db, registry, store
 
 KINDS = ("read", "write")
 DEFAULT_SETTINGS: dict = {
@@ -136,3 +136,35 @@ register(
 )
 register("describe_stats", _describe_stats, COLUMNS_ARG, "read")
 register("detect_anomalies", _detect_anomalies, COLUMNS_ARG, "read")
+
+
+def _skills_module():
+    """取技能能力实例；ENABLE_SKILLS 关闭时 registry 返回 None，这里换成可读的拒绝（P6 退化路径）。"""
+    module = registry.get("skills")
+    if module is None:
+        raise ToolError("技能能力未启用（要 ENABLE_SKILLS=true），本次不能用技能")
+    return module
+
+
+def _list_skills(dataset_id: str = "") -> dict:
+    """列出已导入的技能：slug、类型（prompt/script）、说明与是否启用。"""
+    return {"skills": _skills_module().list_skills()}
+
+
+def _use_skill(slug: str = "", dataset_id: str = "") -> dict:
+    """取用一个技能：prompt 型回提示词片段（由模型放进上下文），script 型跑入口脚本并回输出。"""
+    return _skills_module().use_skill(slug)
+
+
+# 技能与数据集无关，但工具签名统一带 dataset_id 由 agent 注入（§4.2），这两个只是收下不吃
+register("list_skills", _list_skills, {"type": "object", "properties": {}}, "read")
+register(
+    "use_skill",
+    _use_skill,
+    {
+        "type": "object",
+        "properties": {"slug": {"type": "string", "description": "技能 slug，从 list_skills 的结果里取"}},
+        "required": ["slug"],
+    },
+    "read",
+)
