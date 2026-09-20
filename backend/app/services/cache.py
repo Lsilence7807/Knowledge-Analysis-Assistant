@@ -1,35 +1,31 @@
 # 文件：backend/app/services/cache.py
 # 作用：问答复用缓存：精确键命中直接复用 SQL；语义召回留接口给 F5（LanceDB/LiteLLM cache）
 # 阶段：F4 Agent 与记忆换 LangGraph（兼 P10；F5 加语义层）
-# 依赖：hashlib、json、re、app/core/config.py、app/services/{insight,store}.py
+# 依赖：hashlib、json、logging、re、sqlalchemy、app/core/{config,db,vectors}.py、app/models
 from __future__ import annotations
 
 import hashlib
 import json
 import logging
 import re
-from contextlib import closing
 
-from app.core import config, vectors
-from app.services import llm, store
+from sqlalchemy import delete, func, select, update
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+from app.core import config, db, vectors
+from app.models import Dataset, QaCache
+from app.services import llm
 
 logger = logging.getLogger(__name__)
 
 PUNCT = re.compile(r"[\s，。？！、：；,.?!:;\"'（）()\[\]【】]+")  # 只影响归一化，不删字
-DDL = (
-    """CREATE TABLE IF NOT EXISTS qa_cache (
-        key TEXT PRIMARY KEY, dataset_id TEXT, table_version INTEGER, norm_question TEXT, model_id TEXT,
-        sql TEXT, insight_json TEXT, vector BLOB, hits INTEGER DEFAULT 0,
-        last_hit_at TEXT DEFAULT CURRENT_TIMESTAMP, created_at TEXT DEFAULT CURRENT_TIMESTAMP)""",
-)
 
 
 def ensure_tables() -> None:
-    """建缓存表，幂等（main 启动时调一次）。"""
-    with closing(store.connect()) as conn:
-        for stmt in DDL:
-            conn.execute(stmt)
-        conn.commit()
+    """建缓存表，幂等（表统一由 store 那一处建）。"""
+    from app.services import store
+
+    store.ensure_tables()
 
 
 def norm(question: str) -> str:
@@ -45,13 +41,16 @@ def key(dataset_id: str, table_version: int, model_id: str, question: str) -> st
 
 def lookup(k: str) -> dict | None:
     """按键取一条命中并累加计数；没有返回 None。"""
-    with closing(store.connect()) as conn:
-        row = conn.execute("SELECT * FROM qa_cache WHERE key = ?", (k,)).fetchone()
+    with db.session() as orm:
+        row = orm.get(QaCache, k)
         if row is None:
             return None
-        conn.execute("UPDATE qa_cache SET hits = hits + 1, last_hit_at = CURRENT_TIMESTAMP WHERE key = ?", (k,))
-        conn.commit()
-    return dict(row)
+        orm.execute(
+            update(QaCache).where(QaCache.key == k).values(hits=QaCache.hits + 1, last_hit_at=func.current_timestamp())
+        )
+        orm.commit()
+        result = {column.name: getattr(row, column.name) for column in QaCache.__table__.columns}
+    return result
 
 
 def question_vector(question: str) -> list[float] | None:
@@ -94,24 +93,29 @@ def store_hit(
     """写一条缓存；表版本取数据集当前版本（失效靠它而不是删表）。"""
     ensure_tables()
     _remember_vector(k, dataset_id, question, vector)
-    with closing(store.connect()) as conn:
-        dataset = conn.execute("SELECT table_version FROM datasets WHERE id = ?", (dataset_id,)).fetchone()
-        conn.execute(
-            "INSERT INTO qa_cache (key, dataset_id, table_version, norm_question, model_id, sql, insight_json, vector)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET"
-            " sql = excluded.sql, insight_json = excluded.insight_json, table_version = excluded.table_version",
-            (
-                k,
-                dataset_id,
-                int(dataset["table_version"] if dataset else 1),
-                norm(question),
-                "",
-                sql,
-                json.dumps(insight or {}, ensure_ascii=False),
-                None,
-            ),
+    with db.session() as orm:
+        dataset = orm.get(Dataset, dataset_id)
+        values = {
+            "key": k,
+            "dataset_id": dataset_id,
+            "table_version": int(dataset.table_version or 1) if dataset else 1,
+            "norm_question": norm(question),
+            "model_id": "",
+            "sql": sql,
+            "insight_json": json.dumps(insight or {}, ensure_ascii=False),
+        }
+        statement = sqlite_insert(QaCache).values(**values)
+        orm.execute(
+            statement.on_conflict_do_update(
+                index_elements=[QaCache.key],
+                set_={
+                    "sql": statement.excluded.sql,
+                    "insight_json": statement.excluded.insight_json,
+                    "table_version": statement.excluded.table_version,
+                },
+            )
         )
-        conn.commit()
+        orm.commit()
 
 
 def _remember_vector(k: str, dataset_id: str, question: str, vector: list[float] | None) -> None:
@@ -137,17 +141,17 @@ def _remember_vector(k: str, dataset_id: str, question: str, vector: list[float]
 
 def _version(dataset_id: str) -> int:
     """数据集当前表版本（语义命中要比对，旧版本不能复用）。"""
-    with closing(store.connect()) as conn:
-        row = conn.execute("SELECT table_version FROM datasets WHERE id = ?", (dataset_id,)).fetchone()
-    return int(row["table_version"] if row else 1)
+    with db.session() as orm:
+        dataset = orm.get(Dataset, dataset_id)
+    return int(dataset.table_version or 1) if dataset else 1
 
 
 def invalidate(dataset_id: str) -> int:
     """删掉某数据集的全部缓存，返回条数（删数据集/重导入时用）。"""
-    with closing(store.connect()) as conn:
-        removed = conn.execute("DELETE FROM qa_cache WHERE dataset_id = ?", (dataset_id,)).rowcount
-        conn.commit()
-    return max(0, int(removed))
+    with db.session() as orm:
+        removed = orm.execute(delete(QaCache).where(QaCache.dataset_id == dataset_id))
+        orm.commit()
+    return max(0, int(removed.rowcount or 0))
 
 
 def _vector_rows() -> int:
@@ -160,10 +164,11 @@ def _vector_rows() -> int:
 
 def stats() -> dict:
     """命中口径：精确层给条数、总命中与命中率；语义层 F5 才填。"""
-    with closing(store.connect()) as conn:
-        row = conn.execute("SELECT count(*) AS n, coalesce(sum(hits), 0) AS hits FROM qa_cache").fetchone()
-    hits = int(row["hits"] or 0)
-    entries = int(row["n"] or 0)
+    with db.session() as orm:
+        totals = select(func.count(), func.coalesce(func.sum(QaCache.hits), 0)).select_from(QaCache)
+        total, hits = orm.execute(totals).one()
+    entries = int(total or 0)
+    hits = int(hits or 0)
     return {
         "exact": {
             "entries": entries,

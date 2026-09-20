@@ -20,6 +20,9 @@ llama-index-core   # why: 知识库分块/索引/召回与语义缓存检索（F
 llama-index-embeddings-litellm  # why: LlamaIndex 的 embedding 口子接到 LiteLLM | 阶段 F5
 llama-index-vector-stores-lancedb  # why: 向量落 LanceDB 的官方适配 | 阶段 F5
 lancedb            # why: 内嵌向量库（data/vectors） | 阶段 F5(P14)
+sqlalchemy         # why: 元数据库 ORM/引擎（F6 换掉手拼 SQL 的 store） | 阶段 F6
+alembic            # why: 表结构迁移（基线 DDL 与改造前逐字一致） | 阶段 F6
+pydantic-settings  # why: 配置类化：环境变量与默认值一处声明 | 阶段 F6
 
 # --- 运行期：扩展阶段 ---
 mcp                # why: 官方 MCP 客户端 SDK | 阶段 P8

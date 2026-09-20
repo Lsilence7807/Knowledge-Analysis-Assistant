@@ -12,14 +12,15 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api import api_router
 from app.api.routes.ask import _stream_frames  # noqa: F401  test_p17_stream 按改造前的名字引用它
-from app.core import config
+from app.core import config, db
 from app.services import cache, memory, store
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    """启动时准备数据目录与元数据表；失败即启动失败，不带病运行。"""
+    """启动时准备数据目录、跑迁移、兜建表；迁移失败即启动失败，不带病运行。"""
     config.ensure_dirs()
+    db.migrate()
     store.ensure_tables()
     memory.ensure_tables()
     cache.ensure_tables()

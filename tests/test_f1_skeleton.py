@@ -6,11 +6,13 @@ from __future__ import annotations
 
 from app.main import app
 
-# 改造前 app/main.py 里那 23 个端点的路径与方法（20 条路径）；§4.3 的 HTTP 形状是冻结契约，拆文件不许改它
+# 改造前 app/main.py 里那 23 个端点的路径与方法；§4.3 的 HTTP 形状是冻结契约，拆文件不许改它
+# F4 加了 5 条会话与缓存路径（23 -> 28 个端点 / 25 条路径），以后新段加端点照样往这张表加一行
 FROZEN_ROUTES: dict[str, set[str]] = {
     "/ask": {"post"},
     "/ask/stream": {"get"},
     "/bench": {"get"},
+    "/cache/stats": {"get"},
     "/capabilities": {"get"},
     "/datasets": {"get", "post"},
     "/datasets/{dataset_id}": {"delete"},
@@ -24,6 +26,10 @@ FROZEN_ROUTES: dict[str, set[str]] = {
     "/metrics/definitions": {"get"},
     "/query": {"post"},
     "/sandbox/run": {"post"},
+    "/sessions": {"post"},
+    "/sessions/{sid}": {"delete"},
+    "/sessions/{sid}/ask": {"post"},
+    "/sessions/{sid}/steps": {"get"},
     "/settings/models": {"get", "put"},
     "/skills": {"get", "post"},
     "/stats": {"post"},

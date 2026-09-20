@@ -1,34 +1,61 @@
 # 文件：backend/app/core/config.py
-# 作用：集中读取环境变量、本地设置（config/local.json）与路径，其它模块只从这里取配置
+# 作用：集中读取环境变量（pydantic-settings）、本地设置（config/local.json）与路径，其它模块只从这里取配置
 # 阶段：P0 骨架与契约冻结（P3 加密钥来源，P5 加密钥写入；P21 加并发与压测路径；F1 搬到 core/config.py）
-# 依赖：标准库 json、os、pathlib；本文件是仓库根 BASE_DIR 的唯一锚点，其它模块不许自己拼路径
+#       F6 环境变量交 pydantic-settings（BaseSettings），模块级常量名一个没改，测试仍 monkeypatch 这里
+# 依赖：pydantic-settings、标准库 json、pathlib；本文件是仓库根 BASE_DIR 的唯一锚点，其它模块不许自己拼路径
 from __future__ import annotations
 
 import json
 import os
 from pathlib import Path
 
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
 # F1 起本文件在 backend/app/core/ 下：向上三层才是仓库根（config/ data/ web/ 仍在根）
 BASE_DIR = Path(__file__).resolve().parents[3]
-DATA_DIR = Path(os.getenv("DATA_DIR", str(BASE_DIR / "data")))
+
+
+class Settings(BaseSettings):
+    """环境变量那一层（F6 起由 pydantic-settings 解析与校验；默认值与改造前逐项一致）。"""
+
+    model_config = SettingsConfigDict(env_file=None, extra="ignore")
+
+    DATA_DIR: Path = BASE_DIR / "data"
+    MAX_UPLOAD_MB: int = 50
+    AGENT_MAX_STEPS: int = 6
+    RATE_LIMIT_PER_MIN: int = 60
+    ENABLE_AGENT: bool = True
+    ENABLE_MEMORY: bool = True
+    ENABLE_CACHE: bool = True
+    ENABLE_SEMANTIC_CACHE: bool = True
+    EXEC_MAX_WORKERS: int = 4
+    LLM_API_KEY: str = ""
+    LLM_BACKEND: str = "litellm"
+    FRONTEND_DIST: Path | None = None
+
+
+_settings = Settings()
+
+# 模块级常量：其它模块一律从 config 取，测试 monkeypatch 也打在这些名字上（F6 后仍是唯一读点）
+DATA_DIR = Path(_settings.DATA_DIR)
 SQLITE_PATH = DATA_DIR / "meta.sqlite"
 DUCKDB_PATH = DATA_DIR / "analytics.duckdb"
 
-MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "50"))
-AGENT_MAX_STEPS = int(os.getenv("AGENT_MAX_STEPS", "6"))
-RATE_LIMIT_PER_MIN = int(os.getenv("RATE_LIMIT_PER_MIN", "60"))
-ENABLE_AGENT = os.getenv("ENABLE_AGENT", "true").lower() == "true"
+MAX_UPLOAD_MB = _settings.MAX_UPLOAD_MB
+AGENT_MAX_STEPS = _settings.AGENT_MAX_STEPS
+RATE_LIMIT_PER_MIN = _settings.RATE_LIMIT_PER_MIN
+ENABLE_AGENT = _settings.ENABLE_AGENT
 # 会话记忆：关掉退化成单轮 /ask（P10 的 ENABLE_MEMORY=false 口径）
-ENABLE_MEMORY = os.getenv("ENABLE_MEMORY", "true").lower() == "true"
+ENABLE_MEMORY = _settings.ENABLE_MEMORY
 # 问答复用缓存：关掉退化成每次都真跑
-ENABLE_CACHE = os.getenv("ENABLE_CACHE", "true").lower() == "true"
+ENABLE_CACHE = _settings.ENABLE_CACHE
 # 语义检索与语义缓存：关掉回退 FTS5 与精确键（缺 embedding 配置时也自动回退）
-ENABLE_SEMANTIC_CACHE = os.getenv("ENABLE_SEMANTIC_CACHE", "true").lower() == "true"
-EXEC_MAX_WORKERS = int(os.getenv("EXEC_MAX_WORKERS", "4"))
+ENABLE_SEMANTIC_CACHE = _settings.ENABLE_SEMANTIC_CACHE
+EXEC_MAX_WORKERS = _settings.EXEC_MAX_WORKERS
 
-LLM_API_KEY = os.getenv("LLM_API_KEY", "")
+LLM_API_KEY = _settings.LLM_API_KEY
 # 模型层后端：litellm（默认）或 direct（原 OpenAI 单厂商客户端，LiteLLM 出问题时一键回落）
-LLM_BACKEND = os.getenv("LLM_BACKEND", "litellm")
+LLM_BACKEND = _settings.LLM_BACKEND
 MODELS_CONFIG = BASE_DIR / "config" / "models.json"
 TOOLS_CONFIG = BASE_DIR / "config" / "tools.json"
 LOCAL_SETTINGS = BASE_DIR / "config" / "local.json"
@@ -38,7 +65,7 @@ CHECKPOINT_PATH = DATA_DIR / "checkpoints.sqlite"
 # LanceDB 向量库落点（知识库分块与语义缓存的向量都在这儿，两个表）
 VECTORS_DIR = DATA_DIR / "vectors"
 # 前端构建产物落点（Vite 产出、gitignore）：F2b 起由 main.create_app 挂成页面，缺了给可读提示
-FRONTEND_DIST = Path(os.getenv("FRONTEND_DIST", str(BASE_DIR / "web" / "dist")))
+FRONTEND_DIST = Path(_settings.FRONTEND_DIST or BASE_DIR / "web" / "dist")
 
 
 def ensure_dirs() -> None:

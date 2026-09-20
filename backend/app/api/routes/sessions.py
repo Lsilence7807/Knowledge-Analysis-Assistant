@@ -4,15 +4,16 @@
 # 依赖：fastapi、app/api/deps.py、app/api/routes/{ask,insight}.py、app/schemas、app/services/*
 from __future__ import annotations
 
-from contextlib import closing
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException
+from sqlalchemy import select
 
 from app.api.deps import get_dataset
 from app.api.routes.ask import _ask_body
 from app.api.routes.insight import attach_insight
 from app.core import config, db
+from app.models import AgentStep, Task
 from app.schemas import SessionAskIn, SessionIn
 from app.services import cache, memory, store
 
@@ -83,13 +84,16 @@ def session_steps(sid: str) -> dict:
     """会话里每一轮的 agent 步骤轨迹（P13 就把步骤落库了，这里只是按会话查出来）。"""
     if memory.get(sid) is None:
         raise HTTPException(status_code=404, detail=f"没有这个会话：{sid}")
-    with closing(store.connect()) as conn:
-        rows = conn.execute(
-            "SELECT steps.* FROM agent_steps AS steps JOIN tasks ON tasks.id = steps.task_id"
-            " WHERE tasks.session_id = ? ORDER BY steps.id",
-            (sid,),
-        ).fetchall()
-    return {"session_id": sid, "steps": [dict(row) for row in rows]}
+    with db.session() as orm:
+        statement = (
+            select(AgentStep)
+            .join(Task, Task.id == AgentStep.task_id)
+            .where(Task.session_id == sid)
+            .order_by(AgentStep.id)
+        )
+        rows = orm.execute(statement).scalars().all()
+    steps = [{column.name: getattr(row, column.name) for column in AgentStep.__table__.columns} for row in rows]
+    return {"session_id": sid, "steps": steps}
 
 
 @router.get("/cache/stats")

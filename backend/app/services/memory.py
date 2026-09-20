@@ -2,30 +2,22 @@
 # 作用：会话与上下文：LangGraph SqliteSaver 存图状态，sessions/turns 表存会话与轮次；
 #       上下文（最近轮次 + 结论摘要 + 知识库片段 + 技能 + 指标口径）在这里一次给全（K-012/K-034）
 # 阶段：F4 Agent 与记忆换 LangGraph（兼 P10）
-# 依赖：json、sqlite3、langgraph_checkpoint_sqlite、app/core/config.py、app/services/{registry,store}.py
+# 依赖：json、langgraph_checkpoint_sqlite、sqlalchemy、app/core/{config,db}.py、app/models、
+#       app/services/{registry,store}.py
 from __future__ import annotations
 
 import json
-from contextlib import closing
 from dataclasses import asdict, dataclass
 from uuid import uuid4
 
-from app.core import config
+from sqlalchemy import delete, func, select
+
+from app.core import config, db
+from app.models import SessionRow, Turn
 from app.services import registry, store
 
 TURNS = 6  # 上下文里带的最近轮次数（§4.5）
 SUMMARIES = 2  # 其中再带最近几轮的结论摘要（§4.5）
-
-DDL: tuple[str, ...] = (
-    """CREATE TABLE IF NOT EXISTS sessions (
-        id TEXT PRIMARY KEY, dataset_id TEXT, title TEXT, model_id TEXT, owner TEXT,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        last_active_at TEXT DEFAULT CURRENT_TIMESTAMP)""",
-    """CREATE TABLE IF NOT EXISTS turns (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, seq INTEGER,
-        question TEXT, sql TEXT, columns_json TEXT, insight_summary TEXT, cached INTEGER DEFAULT 0,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP)""",
-)
 
 _saver = None
 
@@ -42,11 +34,8 @@ class Session:
 
 
 def ensure_tables() -> None:
-    """建会话相关表，幂等（main 启动时调一次）。"""
-    with closing(store.connect()) as conn:
-        for stmt in DDL:
-            conn.execute(stmt)
-        conn.commit()
+    """建会话相关表，幂等（表统一由 store 那一处建）。"""
+    store.ensure_tables()
 
 
 def checkpointer():
@@ -67,30 +56,36 @@ def create(dataset_id: str, title: str = "", model_id: str = "") -> dict:
     """开一个会话（P10 的 POST /sessions）。"""
     ensure_tables()
     session = Session(id=f"s_{uuid4().hex[:8]}", dataset_id=dataset_id, title=title.strip(), model_id=model_id)
-    with closing(store.connect()) as conn:
-        conn.execute(
-            "INSERT INTO sessions (id, dataset_id, title, model_id) VALUES (?, ?, ?, ?)",
-            (session.id, session.dataset_id, session.title, session.model_id),
+    with db.session() as orm:
+        orm.add(
+            SessionRow(
+                id=session.id,
+                dataset_id=session.dataset_id,
+                title=session.title,
+                model_id=session.model_id,
+            )
         )
-        conn.commit()
+        orm.commit()
     return asdict(session)
 
 
 def get(session_id: str) -> dict | None:
     """取会话；没有就 None（路由据此回 404）。"""
-    with closing(store.connect()) as conn:
-        row = conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
-    return dict(row) if row else None
+    with db.session() as orm:
+        row = orm.get(SessionRow, session_id)
+    if row is None:
+        return None
+    return {column.name: getattr(row, column.name) for column in SessionRow.__table__.columns}
 
 
 def drop(session_id: str) -> int:
     """删会话连同轮次，返回删掉的轮次数（P10 的 DELETE /sessions/{sid}）。"""
     ensure_tables()
-    with closing(store.connect()) as conn:
-        turns = conn.execute("DELETE FROM turns WHERE session_id = ?", (session_id,)).rowcount
-        conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
-        conn.commit()
-    return max(0, int(turns))
+    with db.session() as orm:
+        removed = orm.execute(delete(Turn).where(Turn.session_id == session_id))
+        orm.execute(delete(SessionRow).where(SessionRow.id == session_id))
+        orm.commit()
+    return max(0, int(removed.rowcount or 0))
 
 
 def add_turn(session_id: str, question: str, sql: str, columns: list, insight: dict | None, cached: bool) -> None:
@@ -98,47 +93,48 @@ def add_turn(session_id: str, question: str, sql: str, columns: list, insight: d
     if not session_id:
         return
     ensure_tables()
-    with closing(store.connect()) as conn:
-        seq = conn.execute("SELECT count(*) AS n FROM turns WHERE session_id = ?", (session_id,)).fetchone()["n"]
-        conn.execute(
-            "INSERT INTO turns (session_id, seq, question, sql, columns_json, insight_summary, cached)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (
-                session_id,
-                int(seq) + 1,
-                question,
-                sql,
-                json.dumps(columns, ensure_ascii=False),
-                str((insight or {}).get("summary") or ""),
-                1 if cached else 0,
-            ),
+    with db.session() as orm:
+        seq = orm.execute(select(func.count()).select_from(Turn).where(Turn.session_id == session_id)).scalar_one()
+        orm.add(
+            Turn(
+                session_id=session_id,
+                seq=int(seq) + 1,
+                question=question,
+                sql=sql,
+                columns_json=json.dumps(columns, ensure_ascii=False),
+                insight_summary=str((insight or {}).get("summary") or ""),
+                cached=1 if cached else 0,
+            )
         )
-        conn.execute("UPDATE sessions SET last_active_at = CURRENT_TIMESTAMP WHERE id = ?", (session_id,))
-        conn.commit()
+        row = orm.get(SessionRow, session_id)
+        if row is not None:
+            row.last_active_at = func.current_timestamp()  # 时间由数据库取，别在 Python 里拼
+        orm.commit()
 
 
 def context(session_id: str, turns: int = TURNS) -> list[str]:
     """最近几轮的「问 → SQL」，最新的排最后（§4.2 的 memory.context）。"""
     if not session_id:
         return []
-    with closing(store.connect()) as conn:
-        rows = conn.execute(
-            "SELECT question, sql FROM turns WHERE session_id = ? ORDER BY seq DESC LIMIT ?", (session_id, turns)
-        ).fetchall()
-    return [f"问：{row['question']}｜SQL：{row['sql']}" for row in reversed(rows) if row["question"]]
+    with db.session() as orm:
+        rows = orm.execute(
+            select(Turn.question, Turn.sql).where(Turn.session_id == session_id).order_by(Turn.seq.desc()).limit(turns)
+        ).all()
+    return [f"问：{row.question}｜SQL：{row.sql}" for row in reversed(rows) if row.question]
 
 
 def _summaries(session_id: str, turns: int = SUMMARIES) -> list[str]:
     """最近几轮的结论摘要（同一会话里「上次说华东降幅最大」这种指代要靠它）。"""
     if not session_id:
         return []
-    with closing(store.connect()) as conn:
-        rows = conn.execute(
-            "SELECT insight_summary FROM turns WHERE session_id = ? AND insight_summary != ''"
-            " ORDER BY seq DESC LIMIT ?",
-            (session_id, turns),
-        ).fetchall()
-    return [f"上一轮结论：{row['insight_summary']}" for row in reversed(rows)]
+    with db.session() as orm:
+        rows = orm.execute(
+            select(Turn.insight_summary)
+            .where(Turn.session_id == session_id, Turn.insight_summary != "")
+            .order_by(Turn.seq.desc())
+            .limit(turns)
+        ).all()
+    return [f"上一轮结论：{row.insight_summary}" for row in reversed(rows)]
 
 
 def provider_context(question: str) -> list[str]:

@@ -5,12 +5,11 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from contextlib import closing
 from typing import Any
 
 from fastapi import HTTPException
 
-from app.core import config
+from app.core import config, db
 from app.services import registry, store
 
 # 能力关闭时的 503 文案：带上开启方式，调用方直接展示，不用回来翻文档
@@ -28,9 +27,9 @@ def get_settings():
 
 
 def get_session() -> Iterator[Any]:
-    """元数据库连接，请求结束即关（F6 换 SQLAlchemy session，用法不变）。"""
-    with closing(store.connect()) as conn:
-        yield conn
+    """元数据库会话（SQLAlchemy），请求结束即关；调用方自己 commit。"""
+    with db.session() as orm:
+        yield orm
 
 
 def get_dataset(dataset_id: str) -> dict:

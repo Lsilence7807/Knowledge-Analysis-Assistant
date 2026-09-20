@@ -1,6 +1,7 @@
 # 文件：backend/app/core/exec.py
 # 作用：阻塞任务的统一执行器——DuckDB 查询、pandas、模型 HTTP、子进程都经 run_blocking() 排队进同一个固定线程池
-# 阶段：P21 性能与并发契约
+# 阶段：P21 性能与并发契约（F6 评估过换 anyio / starlette.run_in_threadpool：前者在沙箱子进程路径实测挂住、
+#       后者是 async 接口而调用点全是同步函数，故保留这 25 行；§11 里这一条按「没有可用框架对应物」记录）
 # 依赖：标准库 concurrent.futures、atexit、backend/app/core/config.py
 from __future__ import annotations
 

@@ -1,16 +1,60 @@
 # 文件：backend/app/core/db.py
-# 作用：DuckDB 的唯一出口：登记数据集表、执行查询 SQL（守卫/超时/行数上限）、描述统计与异常检测
+# 作用：数据层的唯一出口：SQLAlchemy 引擎/会话（元数据库）与 DuckDB（登记数据集表、执行查询 SQL、统计）
 # 阶段：P0 骨架与契约冻结（守卫、超时、行数上限与统计在 P2 补全；后补 drop_table、K-002、K-006）
-# 依赖：duckdb、pandas、threading、backend/app/core/config.py、backend/app/core/exec.py
+#       F6 数据层换 SQLAlchemy + Alembic（引擎/会话/迁移入口加在这里，函数签名不变）
+# 依赖：duckdb、pandas、sqlalchemy、threading、backend/app/core/config.py、backend/app/core/exec.py
 from __future__ import annotations
 
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 import duckdb
 import pandas as pd
+from sqlalchemy import Engine, create_engine
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.core import config
 from app.core.exec import run_blocking
+
+_ENGINES: dict[str, Engine] = {}
+_SESSIONS: dict[str, sessionmaker] = {}
+
+
+def engine(sqlite_path=None) -> Engine:
+    """元数据库（SQLite）引擎：按路径缓存，测试换了 config.SQLITE_PATH 自然拿到新引擎。"""
+    path = str(sqlite_path or config.SQLITE_PATH)
+    if path not in _ENGINES:
+        config.ensure_dirs()
+        _ENGINES[path] = create_engine(f"sqlite:///{path}", future=True)
+    return _ENGINES[path]
+
+
+def session_factory(sqlite_path=None) -> sessionmaker:
+    """会话工厂（按引擎缓存）。"""
+    return _SESSIONS.setdefault(str(sqlite_path or config.SQLITE_PATH), sessionmaker(bind=engine(sqlite_path)))
+
+
+@contextmanager
+def session(sqlite_path=None) -> Iterator[Session]:
+    """一个 ORM 会话，结束即关（异常时回滚）；调用方自己 commit。"""
+    with session_factory(sqlite_path)() as db_session:
+        yield db_session
+
+
+def migrate() -> None:
+    """跑 alembic upgrade head；迁移失败直接抛出（宁可起不来，也不要半套表）。"""
+    from alembic import command
+    from alembic.config import Config
+
+    ini = config.BASE_DIR / "backend" / "alembic.ini"
+    if not ini.is_file():
+        return  # 源码树之外跑（如打包产物）：没有迁移脚本就按已建表处理
+    cfg = Config(str(ini))
+    cfg.set_main_option("script_location", str(config.BASE_DIR / "backend" / "app" / "alembic"))
+    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{config.SQLITE_PATH}")
+    command.upgrade(cfg, "head")
+
 
 DEFAULT_LIMIT = 5000
 DEFAULT_TIMEOUT_S = 10
