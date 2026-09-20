@@ -37,6 +37,26 @@ def local_settings() -> dict:
         return {}
 
 
+def save_settings(**patch) -> dict:
+    """合并写 config/local.json：字典按键合并、「带 id 的列表」按 id 合并，其余整体覆盖；返回写后的内容。"""
+    current = local_settings()
+    for key, value in patch.items():
+        old = current.get(key)
+        if isinstance(value, dict) and isinstance(old, dict):
+            current[key] = {**old, **value}
+        elif isinstance(value, list) and isinstance(old, list):
+            merged = {str(item.get("id")): item for item in old if isinstance(item, dict)}
+            for item in value:
+                if isinstance(item, dict):
+                    merged[str(item.get("id"))] = {**merged.get(str(item.get("id")), {}), **item}
+            current[key] = list(merged.values())
+        else:
+            current[key] = value
+    LOCAL_SETTINGS.parent.mkdir(parents=True, exist_ok=True)
+    LOCAL_SETTINGS.write_text(json.dumps(current, ensure_ascii=False, indent=2), encoding="utf-8")
+    return current
+
+
 def api_key(profile: dict | None = None) -> str:
     """取某个模型 profile 的密钥：本地文件（页面写入）优先 → 该 profile 声明的环境变量 → 通用 LLM_API_KEY。
 

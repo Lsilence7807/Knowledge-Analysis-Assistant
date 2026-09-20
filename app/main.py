@@ -1,7 +1,7 @@
 # 文件：app/main.py
 # 作用：HTTP 路由与编排，唯一装配点；禁止在此出现 pandas 调用与 SQL 字符串
-# 阶段：P0 骨架与契约冻结（P1 加数据集路由，P2 加查询路由，P3 加提问路由，P13 加 /tools 与 agent 路径，P4 加 /insight 并把结论并入 /ask）
-# 依赖：FastAPI、app/{agent,config,db,ingest,insight,llm,nlu,store,tools}.py
+# 阶段：P0 骨架与契约冻结（P1 加数据集路由，P2 加查询路由，P3 加提问路由，P13 加 /tools 与 agent 路径，P4 加 /insight 并把结论并入 /ask，P5 加静态前端与 /settings/models）
+# 依赖：FastAPI、app/{agent,config,db,ingest,insight,llm,models,nlu,store,tools}.py
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
@@ -11,8 +11,9 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import Body, FastAPI, File, HTTPException, UploadFile
+from fastapi.staticfiles import StaticFiles
 
-from app import agent, config, db, ingest, insight, llm, nlu, registry, store, tools
+from app import agent, config, db, ingest, insight, llm, models, nlu, registry, store, tools
 from app.schemas import CapabilitiesOut, HealthOut
 
 
@@ -204,3 +205,50 @@ def _attach_insight(body: dict, question: str, dataset: dict) -> dict:
         body["degraded"] = [*body.get("degraded", []), exc.code]
         body["message"] = body.get("message") or str(exc)
     return body
+
+
+@app.get("/settings/models")
+def list_model_settings() -> dict:
+    """可用模型 profile：密钥只回「是否已配」，不回明文。"""
+    return {"models": [_public_model(model) for model in models.list_models()]}
+
+
+@app.put("/settings/models")
+def save_model_settings(payload: dict = Body(...)) -> dict:
+    """新增或更新一个 OpenAI 兼容 profile、写密钥到 config/local.json，并设为默认；保存即生效。"""
+    profile_id = str(payload.get("id") or "").strip()
+    base_url = str(payload.get("base_url") or "").strip()
+    model_name = str(payload.get("model") or "").strip()
+    if not (profile_id and base_url and model_name):
+        raise HTTPException(status_code=400, detail="id、base_url、model 都是必填")
+    profile = {
+        "id": profile_id,
+        "provider": str(payload.get("provider") or "openai_compatible"),
+        "base_url": base_url,
+        "model": model_name,
+        "purpose": payload.get("purpose") or ["sql", "insight"],
+    }
+    if payload.get("api_key_env"):
+        profile["api_key_env"] = str(payload["api_key_env"])
+    patch = {"models": [profile], "default": profile_id}
+    if "api_key" in payload:
+        # 传了 api_key 才写盘（空串等于清掉，好让页面能演示「没密钥只出表格」）
+        patch["api_keys"] = {profile_id: str(payload.get("api_key") or "")}
+    config.save_settings(**patch)
+    return list_model_settings()
+
+
+def _public_model(model: dict) -> dict:
+    """对外只给 id/厂商/模型名与是否已配密钥，密钥本体不出网关。"""
+    return {
+        "id": model.get("id"),
+        "provider": model.get("provider"),
+        "base_url": model.get("base_url"),
+        "model": model.get("model"),
+        "has_key": bool(config.api_key(model)),
+    }
+
+
+# 静态前端必须挂在最后：Mount("/") 会兜住所有未匹配路径，排在 API 路由之前会把它们全抢走
+if (config.BASE_DIR / "web").is_dir():
+    app.mount("/", StaticFiles(directory=config.BASE_DIR / "web", html=True), name="web")
