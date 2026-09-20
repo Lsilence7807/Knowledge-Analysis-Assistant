@@ -5,10 +5,11 @@
 <title>知析 · AI 数据分析助手</title>
 <script src="/vendor/echarts.min.js"></script>
 <style>
+  /* 视觉旋钮集中在这里：主色 --violet、描边 --stroke、卡片密度 --pad、圆角 --radius */
   :root{
     --paper:#FFF7E8; --card:#FFFDF8; --ink:#17130E; --ink-soft:#443C31; --muted:#6E6455;
     --violet:#6B4BF6; --violet-dark:#5433D6; --yellow:#FFD34D; --coral:#FF6A54; --mint:#2F9E5F;
-    --hair:#E7DFCE; --radius:16px; --shadow:6px 6px 0 var(--ink);
+    --hair:#E7DFCE; --radius:16px; --stroke:3px; --pad:18px; --shadow:6px 6px 0 var(--ink);
   }
   *{box-sizing:border-box}
   [hidden]{display:none !important}
@@ -24,7 +25,7 @@
 
   header.topbar{
     max-width:1080px; margin:0 auto 18px; padding:16px 20px; display:flex; align-items:center; gap:14px;
-    flex-wrap:wrap; background:var(--card); border:3px solid var(--ink); border-radius:var(--radius); box-shadow:var(--shadow);
+    flex-wrap:wrap; background:var(--card); border:var(--stroke) solid var(--ink); border-radius:var(--radius); box-shadow:var(--shadow);
   }
   .brand{display:flex; align-items:center; gap:13px; min-width:0}
   .mark{display:block; width:44px; height:44px; flex:none}
@@ -36,8 +37,8 @@
   }
 
   section{
-    max-width:1080px; margin:0 auto 18px; padding:18px 20px 20px;
-    background:var(--card); border:3px solid var(--ink); border-radius:var(--radius); box-shadow:var(--shadow);
+    max-width:1080px; margin:0 auto var(--pad); padding:var(--pad) 20px;
+    background:var(--card); border:var(--stroke) solid var(--ink); border-radius:var(--radius); box-shadow:var(--shadow);
   }
   h2{display:flex; align-items:center; gap:9px; margin:0 0 13px; font-size:16px; font-weight:800; letter-spacing:.01em}
   h2::before{content:""; width:13px; height:13px; flex:none; border:2.5px solid var(--ink); border-radius:5px; background:var(--violet)}
@@ -340,7 +341,7 @@ async function ask() {
 
 function render(body) {
   const degraded = body.degraded || [];
-  say("degraded", degraded.length ? `已降级：${degraded.join("、")}${body.message ? `；${body.message}` : ""}` : "", degraded.length > 0);
+  say("degraded", degraded.length ? `已降级：${degraded.join("、")}，本次只返回基础结果` : "", degraded.length > 0);
   $("sql-box").hidden = !body.sql;
   $("sql").textContent = body.sql || "";
   $("steps").replaceChildren(
