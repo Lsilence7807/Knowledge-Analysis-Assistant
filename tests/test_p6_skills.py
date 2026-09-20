@@ -3,8 +3,8 @@
 #       反例：../../ 路径逃逸、脚本超时被杀、script 未声明入口、SKILL.md 缺 frontmatter、
 #       禁用技能不可用、开关关闭时降级、白名单外的直调被拒（K-023 口径）
 # 阶段：P6 Skill 导入与执行
-# 依赖：contextlib、time、pytest、fastapi.testclient、app/config.py、app/main.py、
-#       app/providers/skills.py、app/store.py、app/tools.py
+# 依赖：contextlib、time、pytest、fastapi.testclient、backend/app/core/config.py、backend/app/main.py、
+#       backend/app/providers/skills.py、backend/app/services/store.py、backend/app/services/tools.py
 from __future__ import annotations
 
 import time
@@ -14,9 +14,10 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app import config, store, tools
+from app.core import config
 from app.main import app
 from app.providers import skills
+from app.services import store, tools
 
 PROMPT_SKILL = """---
 name: demo_prompt

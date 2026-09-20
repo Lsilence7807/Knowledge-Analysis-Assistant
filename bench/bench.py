@@ -1,7 +1,7 @@
 # 文件：bench/bench.py
 # 作用：本地性能基线——造 50 万行表量聚合查询 p50/p95，写 bench/baseline.json，比上次退化就非零退出
 # 阶段：P21 性能与并发契约
-# 依赖：duckdb、标准库 json/statistics/tempfile、app/config.py、app/db.py、app/exec.py
+# 依赖：duckdb、标准库 json/statistics/tempfile、backend/app/core/config.py、backend/app/core/db.py、backend/app/core/exec.py
 from __future__ import annotations
 
 import json
@@ -12,13 +12,13 @@ import tempfile
 import time
 from pathlib import Path
 
-# 直接 python bench/bench.py 时仓库根不在 sys.path（同 K-027 的坑），先补上再 import app
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+# 直接 python bench/bench.py 时 backend/ 不在 sys.path（同 K-027 的坑），先补上再 import app
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "backend"))
 
 import duckdb  # noqa: E402
 
-from app import config, db  # noqa: E402
-from app import exec as exec_pool  # noqa: E402
+from app.core import config, db  # noqa: E402
+from app.core import exec as exec_pool  # noqa: E402
 
 ROWS = 500_000
 RUNS = 20

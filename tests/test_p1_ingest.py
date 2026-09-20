@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from app import config, db
+from app.core import config, db
 from app.main import app
 
 FIXTURES = Path(__file__).parent / "fixtures"

@@ -2,8 +2,9 @@
 # 作用：P7 验收测试：md/txt 导入分块、重复导入不重复、FTS 命中且带出处、短查询回落 LIKE、
 #       不可信片段包裹与指令行剥离；反例：二进制被拒、后缀不支持、路径逃逸、空检索词、开关关闭降级、白名单外直调
 # 阶段：P7 知识库（关键词）
-# 依赖：contextlib、pytest、fastapi.testclient、app/config.py、app/main.py、app/providers/kb.py、
-#       app/store.py、app/tools.py
+# 依赖：contextlib、pytest、fastapi.testclient、backend/app/core/config.py、
+#       backend/app/main.py、backend/app/providers/kb.py、backend/app/services/store.py、
+#       backend/app/services/tools.py
 from __future__ import annotations
 
 from contextlib import closing
@@ -12,9 +13,10 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app import config, store, tools
+from app.core import config
 from app.main import app
 from app.providers import kb
+from app.services import store, tools
 
 LONG_DOC = (
     "# 华东区经营分析\n\n"

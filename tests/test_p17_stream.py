@@ -14,9 +14,10 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from app import config, db, llm, store, stream
 from app import main as app_main
+from app.core import config, db
 from app.main import app
+from app.services import llm, store, stream
 
 FRAME = pd.DataFrame({"region": ["华东", "华南", "华北"] * 4, "amount": [10, 11, 12] * 4})
 SQL = "SELECT region, sum(amount) AS total FROM ds_d_test GROUP BY 1 ORDER BY 2 DESC"

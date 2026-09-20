@@ -13,10 +13,14 @@ ignore = ["B008"]          # FastAPI 的 File(...) / Body(...) 写在默认参�
 
 [tool.ruff.lint.per-file-ignores]
 # 提示词模板里的 JSON 示例是 P4 契约的一部分，按行拆会改动提示词内容
-"app/insight.py" = ["E501"]
+"**/services/insight.py" = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]   # F1 起 app 包在 backend/ 下，ruff 认不出，得点名，否则 import 分组会变
 
 [tool.pytest.ini_options]
-# 仓库根进 sys.path：控制台脚本方式启动（CI 的 `pytest tests -q`）不会自动加 cwd，缺这行 7 个测试模块全 ModuleNotFoundError
-pythonpath = ["."]
+# backend 进 sys.path（F1 起 Python 代码在 backend/app/）：控制台脚本方式启动（CI 的 `pytest tests -q`）
+# 不会自动加 cwd，缺这行测试模块全 ModuleNotFoundError
+pythonpath = ["backend"]
 testpaths = ["tests"]
 # 不放 addopts：验收命令自带 -q，叠加会变成 -qq 把汇总行吃掉（K-020）

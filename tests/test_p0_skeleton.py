@@ -7,9 +7,10 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from app import config, store
+from app.core import config
 from app.main import app
 from app.providers import kb, skills
+from app.services import store
 
 
 @pytest.fixture()

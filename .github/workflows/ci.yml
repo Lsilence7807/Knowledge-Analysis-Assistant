@@ -17,8 +17,8 @@ jobs:
       - name: 装依赖（锁版本）
         run: pip install -r requirements.lock
       - name: ruff 静态检查
-        run: ruff check app tests
+        run: ruff check backend/app tests
       - name: ruff 格式检查
-        run: ruff format --check app tests
+        run: ruff format --check backend/app tests
       - name: 验收测试
         run: pytest tests -q
