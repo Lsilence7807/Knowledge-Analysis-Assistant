@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from app import config, db, llm, store
+from app import config, db, llm, models, store
 from app.main import app
 
 SAMPLE = pd.DataFrame({"region": ["华东", "华南", "华北"] * 7, "amount": [10, 11, 12] * 7})
@@ -82,7 +82,7 @@ def test_ask_without_key_degrades_and_service_stays_usable(client, monkeypatch):
     body = client.post("/ask", json=QUESTION).json()
     assert body["degraded"] == ["query:llm"]
     assert body["sql"] == "" and body["rows"] == []
-    assert "LLM_API_KEY" in body["message"]
+    assert "模型密钥" in body["message"] and "config/local.json" in body["message"]
     kept = client.post("/query", json={"sql": "SELECT count(*) AS n FROM ds_d_test"})
     assert kept.json()["rows"] == [[21]]
 
@@ -136,23 +136,63 @@ def test_ask_empty_question_is_400(client):
     assert client.post("/ask", json={"dataset_id": "d_test", "question": "  "}).status_code == 400
 
 
-def test_local_file_key_wins_over_env(client, monkeypatch, tmp_path):
+def test_page_key_wins_over_env_and_takes_effect_immediately(client, monkeypatch, tmp_path):
     """页面写入的本地密钥优先于环境变量，且保存后立即生效（不用重启）。"""
     _make_dataset(SAMPLE)
     local = tmp_path / "local.json"
-    local.write_text(json.dumps({"llm_api_key": "file-key"}), encoding="utf-8")
+    local.write_text(json.dumps({"api_keys": {"local": "page-key"}}), encoding="utf-8")
     monkeypatch.setattr(config, "LOCAL_SETTINGS", local)
     monkeypatch.setattr(config, "LLM_API_KEY", "env-key")
-    assert config.api_key() == "file-key"
+    assert config.api_key(models.resolve()) == "page-key"
     monkeypatch.setattr(llm, "_complete", _reply(json.dumps({"sql": GOOD_SQL})))
     assert client.post("/ask", json=QUESTION).json()["degraded"] == []
 
 
-def test_api_key_falls_back_to_env_when_file_missing_or_broken(monkeypatch, tmp_path):
-    monkeypatch.setattr(config, "LLM_API_KEY", "env-key")
+def test_api_key_falls_back_to_profile_env_then_generic(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "LOCAL_SETTINGS", tmp_path / "missing.json")
-    assert config.api_key() == "env-key"
+    monkeypatch.setattr(config, "LLM_API_KEY", "generic-key")
+    monkeypatch.setenv("SOME_PROVIDER_KEY", "provider-key")
+    assert config.api_key({"id": "x", "api_key_env": "SOME_PROVIDER_KEY"}) == "provider-key"
+    assert config.api_key({"id": "x", "api_key_env": ""}) == "generic-key"
     broken = tmp_path / "broken.json"
     broken.write_text("{半截", encoding="utf-8")
     monkeypatch.setattr(config, "LOCAL_SETTINGS", broken)
-    assert config.api_key() == "env-key"
+    assert config.api_key({"id": "x", "api_key_env": "SOME_PROVIDER_KEY"}) == "provider-key"
+
+
+def test_page_added_provider_profile_is_used_by_ask(client, monkeypatch, tmp_path):
+    """页面配任意 OpenAI 兼容厂商（base_url + 模型名 + 密钥）就能直接提问，不用改代码。"""
+    _make_dataset(SAMPLE)
+    local = tmp_path / "local.json"
+    local.write_text(
+        json.dumps(
+            {
+                "default": "my-glm",
+                "models": [
+                    {
+                        "id": "my-glm", "provider": "openai_compatible",
+                        "base_url": "https://open.bigmodel.cn/api/paas/v4",
+                        "model": "glm-4-flash", "api_key_env": "GLM_API_KEY",
+                        "purpose": ["sql", "insight"],
+                    }
+                ],
+                "api_keys": {"my-glm": "page-key"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(config, "LOCAL_SETTINGS", local)
+    monkeypatch.setattr(config, "LLM_API_KEY", "")
+    seen: dict = {}
+
+    def fake(messages, model):
+        seen.update(model)
+        return json.dumps({"sql": GOOD_SQL})
+
+    monkeypatch.setattr(llm, "_complete", fake)
+    body = client.post("/ask", json=QUESTION).json()
+    assert body["degraded"] == []
+    assert seen["model"] == "glm-4-flash"
+    assert seen["base_url"] == "https://open.bigmodel.cn/api/paas/v4"
+    assert "my-glm" in [item["id"] for item in models.list_models()]

@@ -37,6 +37,14 @@ def local_settings() -> dict:
         return {}
 
 
-def api_key() -> str:
-    """取模型密钥：本地文件优先，环境变量兜底；每次调用都读，页面保存后立即生效。"""
-    return str(local_settings().get("llm_api_key") or "") or LLM_API_KEY
+def api_key(profile: dict | None = None) -> str:
+    """取某个模型 profile 的密钥：本地文件（页面写入）优先 → 该 profile 声明的环境变量 → 通用 LLM_API_KEY。
+
+    每次调用都读文件，所以页面保存后立即生效，不用重启。
+    """
+    profile = profile or {}
+    keys = local_settings().get("api_keys") or {}
+    from_file = keys.get(str(profile.get("id") or ""))
+    env_name = str(profile.get("api_key_env") or "")
+    from_env = os.getenv(env_name) if env_name else ""
+    return str(from_file or "") or from_env or LLM_API_KEY
