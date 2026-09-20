@@ -1,0 +1,89 @@
+/* 文件：frontend/src/index.css
+   作用：Tailwind v4 入口、P5.1 配色变量（:root）与 shadcn/ui 语义 token 的同名映射
+   阶段：F2a 前端工程
+   依赖：tailwindcss（v4，经 @tailwindcss/vite）、tw-animate-css
+   说明：配色只有一份来源——P5.1 的 :root 变量；下面的 shadcn token 全部指过去，改主色只改那几行 */
+@import "tailwindcss";
+@import "tw-animate-css";
+
+:root {
+  /* --- P5.1 的旋钮（原 web/index.html :root，值原样沿用） --- */
+  --paper: #FFF7E8; --card: #FFFDF8; --ink: #17130E; --ink-soft: #443C31;
+  --violet: #6B4BF6; --violet-dark: #5433D6; --yellow: #FFD34D; --coral: #FF6A54; --mint: #2F9E5F;
+  --hair: #E7DFCE; --radius: 16px; --stroke: 3px; --pad: 18px; --shadow: 6px 6px 0 var(--ink);
+  /* P5.1 的 --muted 是「次要文字灰」，shadcn 的同名 token 是「浅底」，同名不同义，故这里改名避让 */
+  --muted-text: #6E6455;
+
+  /* --- shadcn/ui 语义 token：全部指向上面的 P5.1 变量，组件不再引入第二套配色 --- */
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card-foreground: var(--ink);
+  --popover: var(--card);
+  --popover-foreground: var(--ink);
+  --primary: var(--violet);
+  --primary-foreground: #FFFFFF;
+  --secondary: var(--yellow);
+  --secondary-foreground: var(--ink);
+  --muted: var(--hair);
+  --muted-foreground: var(--muted-text);
+  --accent: var(--yellow);
+  --accent-foreground: var(--ink);
+  --destructive: var(--coral);
+  --destructive-foreground: #FFFFFF;
+  --border: var(--ink);
+  --input: var(--ink);
+  --ring: var(--violet-dark);
+}
+
+@theme inline {
+  /* P5.1 原色：图表与业务组件直接用（bg-violet / text-ink / shadow-hard …） */
+  --color-paper: var(--paper);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-violet: var(--violet);
+  --color-violet-dark: var(--violet-dark);
+  --color-yellow: var(--yellow);
+  --color-coral: var(--coral);
+  --color-mint: var(--mint);
+  --color-hair: var(--hair);
+
+  /* shadcn 语义色 */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-sm: calc(var(--radius) - 6px);
+  --radius-md: calc(var(--radius) - 4px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --shadow-hard: var(--shadow);
+  --font-sans: system-ui, "Microsoft YaHei", sans-serif;
+}
+
+@layer base {
+  body {
+    background-color: var(--paper);
+    /* 纸纹：P5.1 的静态点阵，去掉这行就是纯色底 */
+    background-image: radial-gradient(var(--hair) 1.2px, transparent 1.2px);
+    background-size: 24px 24px;
+    color: var(--ink);
+    font-family: system-ui, "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+}
