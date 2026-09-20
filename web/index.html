@@ -352,7 +352,7 @@ function render(body) {
   );
   renderInsight(body.insight);
   $("row-count").textContent = `${body.row_count ?? (body.rows || []).length} 行${body.truncated ? "（已截断）" : ""}`;
-  if (body.message) say("banner", body.message);
+  say("banner", "已完成，见下方结论");
   renderTable(body.columns || [], body.rows || []);
   renderChart(body.columns || [], body.rows || []);
 }
