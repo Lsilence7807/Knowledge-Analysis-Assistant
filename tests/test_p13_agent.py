@@ -37,6 +37,8 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DATA_DIR", tmp_path)
     monkeypatch.setattr(config, "SQLITE_PATH", tmp_path / "meta.sqlite")
     monkeypatch.setattr(config, "DUCKDB_PATH", tmp_path / "analytics.duckdb")
+    # 本机页面配过密钥时，不隔离这个路径就会拿真实密钥出网（同 K-019）
+    monkeypatch.setattr(config, "LOCAL_SETTINGS", tmp_path / "local.json")
     monkeypatch.setattr(config, "ENABLE_AGENT", True)
     monkeypatch.setattr(config, "LLM_API_KEY", "test-key")
     # P4 起 /ask 还会走一次 insight 的 chat_json（这里给合规替身，免得测试出网）
