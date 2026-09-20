@@ -94,6 +94,14 @@ def test_missing_table_returns_readable_400_not_500(client):
     assert "ds_missing" in response.json()["detail"]
 
 
+def test_bad_request_body_is_422_not_400(client):
+    """K-013：请求体走 pydantic，缺字段或类型错是 422，不再落成 400 或静默默认值。"""
+    _make_dataset(SAMPLE)
+    assert client.post("/query", json={"sql": 123}).status_code == 422
+    assert client.post("/query", json={}).status_code == 422
+    assert client.post("/stats", json={"dataset_id": "d_test", "columns": "region"}).status_code == 422
+
+
 def test_result_over_limit_is_truncated_with_hint(client):
     _make_dataset(pd.DataFrame({"i": range(6000)}), "d_big")
     body = client.post("/query", json={"sql": "SELECT i FROM ds_d_big"}).json()

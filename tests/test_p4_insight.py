@@ -109,6 +109,11 @@ def test_insight_route_returns_complete_fields(client, monkeypatch):
     assert client.get("/capabilities").json()["capabilities"]["insight"] is True
 
 
+def test_insight_missing_sql_is_422(client):
+    """K-013：缺 sql 是 422（schema 层拦下），不再是 400 的手工判断。"""
+    assert client.post("/insight", json={"dataset_id": "d_test", "question": "各区销售额"}).status_code == 422
+
+
 def test_invented_number_lands_in_caveats(client, monkeypatch):
     _make_dataset(SAMPLE)
     reply = {**GOOD_INSIGHT, "summary": "华东 40 最低，另有 999999 的异常"}

@@ -1,6 +1,6 @@
 # 文件：app/main.py
 # 作用：HTTP 路由与编排，唯一装配点；禁止在此出现 pandas 调用与 SQL 字符串
-# 阶段：P0 骨架与契约冻结（P1 加数据集路由，P2 加查询路由，P3 加提问路由，P13 加 /tools 与 agent 路径，P4 加 /insight 并把结论并入 /ask，P5 加静态前端与 /settings/models；A 类补丁加 /ask 落 tasks 与 DELETE /datasets/{id}）
+# 阶段：P0 骨架与契约冻结（P1 加数据集路由，P2 加查询路由，P3 加提问路由，P13 加 /tools 与 agent 路径，P4 加 /insight 并把结论并入 /ask，P5 加静态前端与 /settings/models；A 类补丁加 /ask 落 tasks 与 DELETE /datasets/{id}，K-013 四个路由换 pydantic 请求体）
 # 依赖：FastAPI、app/{agent,config,db,ingest,insight,llm,models,nlu,store,tools}.py
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from fastapi import Body, FastAPI, File, HTTPException, UploadFile
 from fastapi.staticfiles import StaticFiles
 
 from app import agent, config, db, ingest, insight, llm, models, nlu, registry, store, tools
-from app.schemas import CapabilitiesOut, HealthOut
+from app.schemas import AskIn, CapabilitiesOut, HealthOut, InsightIn, QueryIn, StatsIn
 
 
 @asynccontextmanager
@@ -107,26 +107,25 @@ def drop_dataset(dataset_id: str) -> dict:
 
 
 @app.post("/query")
-def run_query(payload: dict = Body(...)) -> dict:
+def run_query(payload: QueryIn) -> dict:
     """直接执行一条只读 SQL；被守卫拦下或执行失败返回 400，错误信息可读。"""
     try:
-        return db.exec_sql(str(payload.get("sql") or ""))
+        return db.exec_sql(payload.sql)
     except db.SQLRejected as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/stats")
-def dataset_stats(payload: dict = Body(...)) -> dict:
+def dataset_stats(payload: StatsIn) -> dict:
     """返回数据集的描述统计与异常行；数据集不存在返回 404。"""
-    dataset_id = str(payload.get("dataset_id") or "")
-    dataset = store.get_dataset(dataset_id)
+    dataset = store.get_dataset(payload.dataset_id)
     if dataset is None:
         raise HTTPException(status_code=404, detail="数据集不存在")
     try:
-        result = db.describe(dataset_id, payload.get("columns"))
+        result = db.describe(payload.dataset_id, payload.columns)
     except db.SQLRejected as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"dataset_id": dataset_id, "rows": dataset["rows"], **result}
+    return {"dataset_id": payload.dataset_id, "rows": dataset["rows"], **result}
 
 
 @app.get("/tools")
@@ -143,11 +142,11 @@ def list_tools() -> dict:
 
 
 @app.post("/ask")
-def ask(payload: dict = Body(...)) -> dict:
+def ask(payload: AskIn) -> dict:
     """提问 →（模型）→ SQL → 结果表 → 结论；模型不可用或 SQL 不合法时降级，HTTP 仍 200。"""
-    dataset_id = str(payload.get("dataset_id") or "")
-    question = str(payload.get("question") or "").strip()
-    session_id = str(payload.get("session_id") or "")
+    dataset_id = payload.dataset_id
+    question = payload.question.strip()
+    session_id = payload.session_id
     dataset = store.get_dataset(dataset_id)
     if dataset is None:
         raise HTTPException(status_code=404, detail="数据集不存在")
@@ -213,21 +212,21 @@ def ask(payload: dict = Body(...)) -> dict:
 
 
 @app.post("/insight")
-def explain(payload: dict = Body(...)) -> dict:
+def explain(payload: InsightIn) -> dict:
     """对一条 SQL 的结果表出结论；模型不可用时 insight 为空并记 degraded，HTTP 仍 200。"""
-    dataset_id = str(payload.get("dataset_id") or "")
-    question = str(payload.get("question") or "").strip()
-    sql = str(payload.get("sql") or "").strip()
+    dataset_id = payload.dataset_id
     dataset = store.get_dataset(dataset_id)
     if dataset is None:
         raise HTTPException(status_code=404, detail="数据集不存在")
-    if not sql:
-        raise HTTPException(status_code=400, detail="需要 sql：/insight 解读的是查询结果")
     try:
-        result = db.exec_sql(sql)
+        result = db.exec_sql(payload.sql)
     except db.SQLRejected as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return _attach_insight({"dataset_id": dataset_id, **result, "degraded": [], "message": ""}, question, dataset)
+    return _attach_insight(
+        {"dataset_id": dataset_id, **result, "degraded": [], "message": ""},
+        payload.question.strip(),
+        dataset,
+    )
 
 
 def _attach_insight(body: dict, question: str, dataset: dict) -> dict:

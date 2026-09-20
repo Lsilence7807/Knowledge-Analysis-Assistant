@@ -165,6 +165,12 @@ def test_ask_empty_question_is_400(client):
     assert client.post("/ask", json={"dataset_id": "d_test", "question": "  "}).status_code == 400
 
 
+def test_ask_bad_request_body_is_422(client):
+    """K-013：缺 question 或类型错是 422；只有「全空白」才算语义为空，仍走 400。"""
+    assert client.post("/ask", json={"dataset_id": "d_test", "question": 5}).status_code == 422
+    assert client.post("/ask", json={"dataset_id": "d_test"}).status_code == 422
+
+
 def test_page_key_wins_over_env_and_takes_effect_immediately(client, monkeypatch, tmp_path):
     """页面写入的本地密钥优先于环境变量，且保存后立即生效（不用重启）。"""
     _make_dataset(SAMPLE)
