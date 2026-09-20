@@ -8,6 +8,7 @@
 
 ```
 & .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+# 复现当前环境锁版本：pip install -r requirements.lock（requirements.txt 留给想装最新版本的人）
 & .\.venv\Scripts\python.exe -m uvicorn app.main:app --port 8017
 # 起服务前先确认端口没被旧进程占着：Get-NetTCPConnection -LocalPort 8017 -State Listen
 # 页面：http://127.0.0.1:8017/ ；接口文档：/docs
