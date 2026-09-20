@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import sqlite3
+import json
 from contextlib import closing
 
 from app import config
@@ -56,3 +57,43 @@ def table_names() -> list[str]:
             "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
         ).fetchall()
     return [row["name"] for row in rows]
+
+
+def insert_dataset(dataset: dict) -> None:
+    """写入一个数据集的元数据。"""
+    ensure_tables()
+    fields = (
+        "id", "name", "source_id", "source_path", "table_name", "rows", "cols",
+        "profile_json", "clean_log", "table_version", "owner",
+    )
+    values = [dataset.get(field) for field in fields]
+    with closing(connect()) as conn:
+        conn.execute(
+            f"INSERT INTO datasets ({', '.join(fields)}) VALUES ({', '.join('?' for _ in fields)})",
+            values,
+        )
+        conn.commit()
+
+
+def list_datasets() -> list[dict]:
+    """返回所有数据集的简要元数据。"""
+    ensure_tables()
+    with closing(connect()) as conn:
+        rows = conn.execute(
+            "SELECT id, name, table_name, rows, cols, table_version, created_at "
+            "FROM datasets ORDER BY created_at DESC, id DESC"
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_dataset(dataset_id: str) -> dict | None:
+    """返回指定数据集及其画像，不存在时返回 None。"""
+    ensure_tables()
+    with closing(connect()) as conn:
+        row = conn.execute("SELECT * FROM datasets WHERE id = ?", (dataset_id,)).fetchone()
+    if row is None:
+        return None
+    result = dict(row)
+    result["profile"] = json.loads(result.pop("profile_json") or "{}")
+    result["clean_log"] = json.loads(result["clean_log"] or "[]")
+    return result
