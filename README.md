@@ -13,7 +13,7 @@ uvicorn app.main:app --reload --port 8000
 # 模型：在页面上填任意 OpenAI 兼容厂商的 base_url + 模型名 + 密钥（写本机 config/local.json，不进仓库）
 ```
 
-验收（MVP 七段 + A 类补丁，快照 68 passed）：
+验收（MVP 七段 + A 类补丁，快照 69 passed）：
 
 ```
 python -m pytest tests -q
