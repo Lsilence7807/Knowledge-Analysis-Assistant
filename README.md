@@ -63,7 +63,7 @@
 
 **交互**
 
-- 单页前端：上传 → 选数据集 → 提问 → SQL（可折叠）→ 步骤 → 结论卡片 → 结果表 → 图表
+- 单页前端（v3.1 起换 React + shadcn/ui 骨架）：上传 → 选数据集 → 提问 → SQL（可折叠）→ 步骤 → 结论卡片 → 结果表 → 图表
 - SSE 流式：`plan → sql → row_count → token* → insight → trace → done`，客户端断开即取消上游模型调用
 - ECharts 走本地资源离线可用，柱状 / 折线 / 饼图可切换
 
@@ -82,6 +82,8 @@
 | 密钥 | 只从本机 `config/local.json` 或环境变量读取，不进仓库、日志与 SQL |
 
 ## 🏗️ 架构
+
+（下图是 v3.1 骨架整改后的**目标形态**；当前代码仍是平铺 `app/` + 单页 `web/index.html`，F1/F2/F10 落地后对齐，见 `docs/代码台账.md` K-039）
 
 ```mermaid
 flowchart LR
@@ -126,6 +128,8 @@ cd frontend; npm run lint; npx tsc --noEmit; npm run build
 ## 📁 项目结构
 
 ```
+（v3.1 目标结构；当前 `app/` 平铺在仓库根、前端是 `web/index.html` 单页）
+
 ```
 backend/app/    后端：api/routes 端点 · api/deps 依赖注入 · core 配置与守卫 · models ORM · schemas 边界模型 · services 业务（LangGraph 编排 / LiteLLM 模型层 / 检索 / 沙箱 / 报告）
   providers/      知识库 / Skill / MCP / 数据源四个可插拔能力
@@ -147,6 +151,8 @@ docs/           设计文档、台账、索引
 | --- | --- |
 | 层 | 选型 |
 | --- | --- |
+下表是 v3.1**目标形态**（框架与骨架已定稿，F1/F2/F10 逐段落地）；当前已实现的栈见 `docs/最小可用集.md`。
+
 | 层 | 选型 |
 | --- | --- |
 | 后端骨架 | FastAPI 官方模板结构：`api/routes` + `api/deps.py` + `core` + `models` + `schemas` + `services` + `alembic` |
