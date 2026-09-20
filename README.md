@@ -6,6 +6,10 @@
 
 ## 怎么跑
 
+什么都不想敲：**双击 `启动.cmd`**。首次会自动建 `.venv`、按 `requirements.lock` 装依赖、起服务并打开 `http://127.0.0.1:8017/`；之后每次双击直接起来（服务已在跑就只开页面）。需要机器上有 Python 3.11+。
+
+想手动来，就按下面四条命令：
+
 ```
 & .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 # 复现当前环境锁版本：pip install -r requirements.lock（requirements.txt 留给想装最新版本的人）

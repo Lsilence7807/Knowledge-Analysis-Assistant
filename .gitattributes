@@ -3,3 +3,6 @@
 # 阶段：P0 起（2026-09-20 落地）
 
 * text=auto eol=lf
+
+# Windows 批处理必须是 CRLF：cmd 读 LF-only 的 .cmd 时 goto 标签会失效
+*.cmd text eol=crlf
