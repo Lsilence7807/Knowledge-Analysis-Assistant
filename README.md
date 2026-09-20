@@ -7,13 +7,14 @@
 ## 怎么跑
 
 ```
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
-# 页面：http://127.0.0.1:8000/ ；接口文档：/docs
+& .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+& .\.venv\Scripts\python.exe -m uvicorn app.main:app --port 8017
+# 起服务前先确认端口没被旧进程占着：Get-NetTCPConnection -LocalPort 8017 -State Listen
+# 页面：http://127.0.0.1:8017/ ；接口文档：/docs
 # 模型：在页面上填任意 OpenAI 兼容厂商的 base_url + 模型名 + 密钥（写本机 config/local.json，不进仓库）
 ```
 
-质量门与验收（MVP 七段 + 台账补丁，快照 79 passed）：
+质量门与验收（MVP 七段 + 台账补丁，快照 79 passed；测试必须在真实文件系统里跑，沙箱内 `tmp_path` 不可写，见 `docs/代码台账.md` 的 K-017）：
 
 ```
 python -m ruff check app tests

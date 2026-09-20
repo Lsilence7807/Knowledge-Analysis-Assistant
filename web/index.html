@@ -392,11 +392,13 @@ function renderTable(columns, rows) {
   $("table").replaceChildren(head, body);
 }
 
+// 图表取色统一读 :root 的变量，改主色只改一处；第 5 色与字标 SVG 里的 hex 仍是硬编码
+const cssVar = (name, fallback) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
 const chartTheme = {
-  color: ["#6B4BF6", "#FFD34D", "#FF6A54", "#2F9E5F", "#5433D6", "#B08C00"],
-  textStyle: { color: "#443C31", fontFamily: 'system-ui, "Microsoft YaHei", sans-serif' },
+  color: [cssVar("--violet", "#6B4BF6"), cssVar("--yellow", "#FFD34D"), cssVar("--coral", "#FF6A54"), cssVar("--mint", "#2F9E5F"), cssVar("--violet-dark", "#5433D6"), "#B08C00"],
+  textStyle: { color: cssVar("--ink-soft", "#443C31"), fontFamily: 'system-ui, "Microsoft YaHei", sans-serif' },
   grid: { left: 12, right: 18, top: 28, bottom: 6, containLabel: true },
-  tooltip: { borderColor: "#17130E", borderWidth: 2, backgroundColor: "#FFFDF8", textStyle: { color: "#17130E" } },
+  tooltip: { borderColor: cssVar("--ink", "#17130E"), borderWidth: 2, backgroundColor: cssVar("--card", "#FFFDF8"), textStyle: { color: cssVar("--ink", "#17130E") } },
 };
 
 function renderChart(columns, rows) {
