@@ -25,6 +25,8 @@ MODELS_CONFIG = BASE_DIR / "config" / "models.json"
 TOOLS_CONFIG = BASE_DIR / "config" / "tools.json"
 LOCAL_SETTINGS = BASE_DIR / "config" / "local.json"
 BENCH_BASELINE = BASE_DIR / "bench" / "baseline.json"
+# 前端构建产物落点（Vite 产出、gitignore）：F2b 起由 main.create_app 挂成页面，缺了给可读提示
+FRONTEND_DIST = Path(os.getenv("FRONTEND_DIST", str(BASE_DIR / "web" / "dist")))
 
 
 def ensure_dirs() -> None:

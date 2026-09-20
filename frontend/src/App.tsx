@@ -6,6 +6,11 @@ import { Outlet } from "@tanstack/react-router";
 
 import { Nav } from "@/components/nav";
 
+// 懒加载页面还没到位时的占位（router.ts 的 pendingComponent）
+export function Pending() {
+  return <p className="p-6 text-sm text-muted-foreground">加载中…</p>;
+}
+
 export function Shell() {
   return (
     <div className="min-h-screen">

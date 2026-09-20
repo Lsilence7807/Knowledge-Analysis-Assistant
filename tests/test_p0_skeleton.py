@@ -62,5 +62,12 @@ def test_config_defaults():
     assert config.SQLITE_PATH.name == "meta.sqlite"
 
 
-def test_unknown_path_returns_404(client):
-    assert client.get("/does-not-exist").status_code == 404
+def test_unknown_path_serves_frontend(client):
+    """未匹配路径交给前端（SPA 回退，F2b 起）：有构建产物回 index.html，没构建给可读提示。"""
+    resp = client.get("/does-not-exist")
+    if (config.FRONTEND_DIST / "index.html").is_file():
+        assert resp.status_code == 200 and 'id="root"' in resp.text
+    else:
+        assert resp.status_code == 503
+    # 接口层 404 不变：不存在的数据集仍按 §4.3 回 404（SPA 回退不许吃掉接口的报错）
+    assert client.get("/datasets/no-such-id/profile").status_code == 404

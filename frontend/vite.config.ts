@@ -18,7 +18,21 @@ const apiTarget = process.env.VITE_API_TARGET ?? 'http://127.0.0.1:8017'
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: { alias: { '@': '/src' } },
-  build: { outDir: '../web/dist', emptyOutDir: true },
+  build: {
+    outDir: '../web/dist',
+    emptyOutDir: true,
+    // 图表与聊天壳是大头，按依赖拆包：首页首屏不再拖着整包下载
+    rollupOptions: {
+      output: {
+        manualChunks(id: string) {
+          if (!id.includes('node_modules')) return
+          if (id.includes('echarts') || id.includes('zrender')) return 'charts'
+          if (id.includes('@assistant-ui') || id.includes('@ai-sdk') || id.includes('/ai/')) return 'chat'
+          return 'vendor'
+        },
+      },
+    },
+  },
   server: {
     proxy: Object.fromEntries(
       API_PREFIXES.map((prefix) => [prefix, { target: apiTarget, changeOrigin: true }]),

@@ -89,20 +89,23 @@ def _reply(text: str, seen: list):
 
 
 def test_home_and_static_assets(client):
+    """首页由 React 构建产物提供：有 dist 给 index.html 与挂载点，缺 dist 给可读构建提示（HTTP 断言不变）。"""
     home = client.get("/")
-    assert home.status_code == 200
-    assert "echarts.min.js" in home.text and "提问" in home.text
-    vendor = client.get("/vendor/echarts.min.js")
-    assert vendor.status_code == 200 and len(vendor.content) > 100_000
+    if (config.FRONTEND_DIST / "index.html").is_file():
+        assert home.status_code == 200
+        assert 'id="root"' in home.text
+        assert "assets/" in home.text
+    else:
+        assert home.status_code == 503
+        assert "npm --prefix frontend" in home.text
     assert client.get("/health").json()["status"] == "ok"
 
 
-def test_home_has_delete_dataset_button(client):
-    """页面能删数据集（A 类补丁）：按钮与它调用的 DELETE 方法都在，改前端时别把它删掉。"""
-    home = client.get("/")
-    assert 'id="delete-dataset"' in home.text
-    assert '"DELETE"' in home.text
-    assert '"delete-dataset"' in home.text
+def test_delete_dataset_still_wired():
+    """页面能删数据集（A 类补丁）：React 源码里还留着 DELETE 调用，改前端时别把它弄丢。"""
+    src = Path(__file__).resolve().parents[1] / "frontend" / "src"
+    callers = [p.name for p in src.rglob("*.ts*") if 'method: "DELETE"' in p.read_text(encoding="utf-8")]
+    assert callers, "前端源码里找不到 DELETE 调用：删数据集功能被删了？"
 
 
 def test_full_chain_upload_ask_insight(client, monkeypatch):

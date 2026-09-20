@@ -43,6 +43,17 @@ if errorlevel 1 (
   ".venv\Scripts\python.exe" -m pip install --disable-pip-version-check -r requirements.txt
 )
 
+:frontend
+if exist "web\dist\index.html" goto :run
+where npm >nul 2>nul
+if errorlevel 1 (
+  echo 没找到 Node.js，跳过前端构建：页面会提示未构建，只调 API 不受影响。
+  goto :run
+)
+echo 首次构建前端页面（需要联网，几分钟，只做这一次）
+if exist "frontend\node_modules" (call npm --prefix frontend install) else (call npm --prefix frontend ci)
+call npm --prefix frontend run build
+
 :run
 echo 正在启动，页面会自动打开；关掉这个窗口就停止服务。
 echo %URL%
