@@ -17,6 +17,7 @@ from app.api.routes import (
     models,
     query,
     sandbox,
+    sessions,
     skills,
     tools,
 )
@@ -36,4 +37,5 @@ api_router.include_router(mcp.router)
 api_router.include_router(sandbox.router)
 api_router.include_router(metrics.router)
 api_router.include_router(tools.router)
+api_router.include_router(sessions.router)
 api_router.include_router(bench.router)

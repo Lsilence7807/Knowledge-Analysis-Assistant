@@ -37,6 +37,7 @@ def test_capabilities_without_key_only_stats_available(client, monkeypatch):
     monkeypatch.setattr(config, "api_key", lambda: "")
     monkeypatch.setattr(skills, "ENABLED", False)
     monkeypatch.setattr(kb, "ENABLED", False)
+    monkeypatch.setattr(config, "ENABLE_MEMORY", False)  # P10 的会话层同样不依赖模型，按同一口径关掉
     response = client.get("/capabilities")
     assert response.status_code == 200
     body = response.json()

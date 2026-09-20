@@ -18,6 +18,10 @@ MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "50"))
 AGENT_MAX_STEPS = int(os.getenv("AGENT_MAX_STEPS", "6"))
 RATE_LIMIT_PER_MIN = int(os.getenv("RATE_LIMIT_PER_MIN", "60"))
 ENABLE_AGENT = os.getenv("ENABLE_AGENT", "true").lower() == "true"
+# 会话记忆：关掉退化成单轮 /ask（P10 的 ENABLE_MEMORY=false 口径）
+ENABLE_MEMORY = os.getenv("ENABLE_MEMORY", "true").lower() == "true"
+# 问答复用缓存：关掉退化成每次都真跑
+ENABLE_CACHE = os.getenv("ENABLE_CACHE", "true").lower() == "true"
 EXEC_MAX_WORKERS = int(os.getenv("EXEC_MAX_WORKERS", "4"))
 
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
@@ -27,6 +31,8 @@ MODELS_CONFIG = BASE_DIR / "config" / "models.json"
 TOOLS_CONFIG = BASE_DIR / "config" / "tools.json"
 LOCAL_SETTINGS = BASE_DIR / "config" / "local.json"
 BENCH_BASELINE = BASE_DIR / "bench" / "baseline.json"
+# LangGraph 的会话状态（SqliteSaver 自己建表，与元数据库分开存）
+CHECKPOINT_PATH = DATA_DIR / "checkpoints.sqlite"
 # 前端构建产物落点（Vite 产出、gitignore）：F2b 起由 main.create_app 挂成页面，缺了给可读提示
 FRONTEND_DIST = Path(os.getenv("FRONTEND_DIST", str(BASE_DIR / "web" / "dist")))
 

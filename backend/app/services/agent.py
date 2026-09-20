@@ -1,18 +1,21 @@
 # 文件：backend/app/services/agent.py
-# 作用：Agent 循环：模型规划 → 调工具 → 观察 → 再规划；产出 /ask 的响应并把步骤落 agent_steps
-# 阶段：P13 Agent 循环与工具调用（K-008：回模型的单步结果按 200 行截，响应结果表按 /query 口径给足）
-# 依赖：hashlib、json、time、uuid、dataclasses、backend/app/core/config.py、
-#       backend/app/services/llm.py、backend/app/services/store.py、backend/app/services/tools.py
+# 作用：Agent 图（LangGraph）：规划节点 → 工具节点 → 再规划；产出 /ask 的响应并把步骤落 agent_steps
+# 阶段：F4 Agent 与记忆换 LangGraph（兼 P13；K-008 的截断口径、K-012/K-034 的上下文都在这里收口）
+# 依赖：hashlib、json、time、uuid、dataclasses、typing、langgraph、backend/app/core/config.py、
+#       backend/app/services/{llm,memory,store,tools}.py
 from __future__ import annotations
 
 import hashlib
 import json
 import time
 from dataclasses import dataclass, field
+from typing import TypedDict
 from uuid import uuid4
 
+from langgraph.graph import END, START, StateGraph
+
 from app.core import config
-from app.services import llm, store, tools
+from app.services import llm, memory, store, tools
 
 SYSTEM = """你是数据分析助手，用工具回答用户关于一个数据集的问题。
 规则：
@@ -40,6 +43,27 @@ class AgentResult:
     message: str = ""
 
 
+class State(TypedDict, total=False):
+    """图状态：nodes 每轮回整份 messages/steps（后写覆盖先写），checkpointer 存的就永远是当前态。
+
+    覆盖而不是追加是有意的：带 checkpointer 的图会把上一轮的状态并回来，追加会把同会话
+    第二次提问的历史消息重新喂给模型（工具结果、旧表格），P13 的步数与截断断言都会跟着变。
+    """
+
+    messages: list
+    payloads: list
+    allow: list
+    budget: int
+    model_id: str | None
+    dataset_id: str
+    steps: list
+    table: dict | None
+    degraded: list
+    message: str
+    answered: bool
+    pending: list
+
+
 def run(
     question: str,
     session_id: str | None,
@@ -47,41 +71,48 @@ def run(
     model_id: str | None = None,
     max_steps: int | None = None,
 ) -> AgentResult:
-    """跑一轮 agent 循环；模型不可用、步数耗尽、工具失败都不抛错，降级信息写在返回值里。"""
+    """跑一轮 agent 图；模型不可用、步数耗尽、工具失败都不抛错，降级信息写在返回值里。"""
     cfg = tools.settings()
     budget = max(1, min(int(max_steps or config.AGENT_MAX_STEPS), int(cfg.get("max_steps", 6))))
     allow = [str(name) for name in cfg.get("allow") or []]
-    payloads = tools.all_tools(set(allow))
-    result = AgentResult(task_id=f"t_{uuid4().hex[:8]}", dataset_id=dataset_id)
-    messages = [
-        {"role": "system", "content": f"{SYSTEM.format(max_steps=budget)}\n\n{_schema_hint(dataset_id)}"},
-        {"role": "user", "content": question},
-    ]
-    table: dict | None = None
-    answered = False
-    while len(result.steps) < budget:
-        try:
-            reply = llm.chat_tools(messages, payloads, model_id)
-        except (llm.LLMUnavailable, llm.LLMError) as exc:
-            # 第一步就失败说明模型这条路整体不可用，与 P3 用同一个降级标识；用户仍可手写 /query
-            result.degraded = ["query:llm"] if not result.steps else ["agent:llm"]
-            result.message = str(exc)
-            break
-        if not reply.get("tool_calls"):
-            result.message = str(reply.get("content") or "").strip() or "模型没有给出结论"
-            answered = True
-            break
-        messages.append(_assistant_message(reply))
-        for tool_call in reply["tool_calls"]:
-            if len(result.steps) >= budget:
-                break  # 预算已满：这一步不执行，由循环外的收尾信息说明
-            step, payload, table_payload = _run_step(tool_call, allow, dataset_id, len(result.steps) + 1)
-            result.steps.append(step)
-            messages.append(_tool_message(tool_call.get("id"), payload))
-            table = table_payload or table
-    if not answered and not result.degraded:
+    task_id = f"t_{uuid4().hex[:8]}"
+    system = f"{SYSTEM.format(max_steps=budget)}\n\n{_schema_hint(dataset_id)}"
+    extra = memory.agent_context(question, session_id)
+    if extra:
+        system = f"{system}\n\n{extra}"
+    state: State = {
+        "messages": [{"role": "system", "content": system}, {"role": "user", "content": question}],
+        "payloads": tools.all_tools(set(allow)),
+        "allow": allow,
+        "budget": budget,
+        "model_id": model_id,
+        "dataset_id": dataset_id,
+        "steps": [],
+        "table": None,
+        "degraded": [],
+        "message": "",
+        "answered": False,
+        "pending": [],
+    }
+    final = graph(budget).invoke(
+        state,
+        {
+            "configurable": {"thread_id": memory.thread_id(session_id, task_id)},
+            # 每轮规划 + 一轮工具 = 2 个 super-step，留 2 步收尾
+            "recursion_limit": budget * 2 + 2,
+        },
+    )
+    result = AgentResult(
+        task_id=task_id,
+        dataset_id=dataset_id,
+        steps=list(final.get("steps") or []),
+        degraded=list(final.get("degraded") or []),
+        message=str(final.get("message") or ""),
+    )
+    if not final.get("answered") and not result.degraded:
         result.degraded.append("agent:max_steps")
         result.message = f"步数预算（{budget} 步）已用尽，返回已完成的步骤与阶段性结果"
+    table = final.get("table")
     if table:
         result.sql, result.columns = table["sql"], table["columns"]
         result.rows, result.row_count = table["rows"], table["row_count"]
@@ -90,6 +121,72 @@ def run(
     for step in result.steps:
         store.insert_agent_step(result.task_id, step)
     return result
+
+
+def graph(budget: int):
+    """编译 agent 图：规划 →（有条件）工具 → 规划 …；会话打开时挂 SqliteSaver 存状态。"""
+    builder = StateGraph(State)
+    builder.add_node("plan", _plan)
+    builder.add_node("tools", _tools)
+    builder.add_edge(START, "plan")
+    builder.add_conditional_edges("plan", _after_plan, {"tools": "tools", "end": END})
+    builder.add_conditional_edges("tools", _after_tools, {"plan": "plan", "end": END})
+    checkpointer = memory.checkpointer() if config.ENABLE_MEMORY else None
+    return builder.compile(checkpointer=checkpointer)
+
+
+def _plan(state: State) -> dict:
+    """规划节点：模型决定下一步调哪些工具，或直接给结论。
+
+    上下文（轮次、知识库片段、技能、指标口径）已经在系统提示里给全了，这里不再补查。
+    """
+    try:
+        reply = llm.chat_tools(state["messages"], state["payloads"], state.get("model_id"))
+    except (llm.LLMUnavailable, llm.LLMError) as exc:
+        # 第一步就失败说明模型这条路整体不可用，与 P3 用同一个降级标识；用户仍可手写 /query
+        return {
+            "degraded": ["query:llm"] if not state["steps"] else ["agent:llm"],
+            "message": str(exc),
+            "answered": False,
+            "pending": [],
+        }
+    calls = reply.get("tool_calls") or []
+    if not calls:
+        return {
+            "message": str(reply.get("content") or "").strip() or "模型没有给出结论",
+            "answered": True,
+            "pending": [],
+        }
+    return {"messages": [*state["messages"], _assistant_message(reply)], "pending": calls}
+
+
+def _tools(state: State) -> dict:
+    """工具节点：按预算执行本轮的每个工具调用，把步骤与结果记回状态。"""
+    steps = list(state["steps"])
+    messages = list(state["messages"])
+    table = state.get("table")
+    for tool_call in state.get("pending") or []:
+        if len(steps) >= int(state["budget"]):
+            break  # 预算已满：这一步不执行，由收尾信息说明
+        step, payload, table_payload = _run_step(tool_call, state["allow"], state["dataset_id"], len(steps) + 1)
+        steps.append(step)
+        messages.append(_tool_message(tool_call.get("id"), payload))
+        table = table_payload or table
+    return {"steps": steps, "messages": messages, "table": table, "pending": []}
+
+
+def _after_plan(state: State) -> str:
+    """规划完去哪：还有工具要调就进工具节点，否则收尾（模型挂了或步数用完也算收尾）。"""
+    if state.get("answered") or state.get("degraded"):
+        return "end"
+    if not state.get("pending"):
+        return "end"
+    return "tools" if len(state["steps"]) < int(state["budget"]) else "end"
+
+
+def _after_tools(state: State) -> str:
+    """工具跑完回到规划节点；预算用完就收尾。"""
+    return "end" if len(state["steps"]) >= int(state["budget"]) else "plan"
 
 
 def _run_step(tool_call: dict, allow: list[str], dataset_id: str, n: int) -> tuple[dict, dict, dict | None]:

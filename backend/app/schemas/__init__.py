@@ -80,6 +80,21 @@ class InsightIn(BaseModel):
     question: str = ""
 
 
+class SessionIn(BaseModel):
+    """POST /sessions 请求体：会话绑定的数据集与标题。"""
+
+    dataset_id: str
+    title: str = ""
+    model_id: str = ""
+
+
+class SessionAskIn(BaseModel):
+    """POST /sessions/{sid}/ask 请求体：提问；dataset_id 留空就用会话绑定的那个。"""
+
+    question: str
+    dataset_id: str = ""
+
+
 class SandboxIn(BaseModel):
     """POST /sandbox/run 请求体：要执行的 pandas 代码；dataset_id 非空时把该数据集只读副本注入为 df。"""
 

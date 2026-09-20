@@ -2,12 +2,14 @@
 # 作用：能力注册表：新能力的唯一接入点，provider 只在这里被惰性装配
 # 阶段：P0 骨架与契约冻结（P2 注册 stats；P3 注册 query、llm；P13 注册 agent；P6 注册 skills；P7 注册 kb；
 #       P15 注册 sandbox；P8 注册 mcp）
-# 依赖：标准库 logging
+# 依赖：标准库 logging、backend/app/core/config.py
 from __future__ import annotations
 
 import logging
 from collections.abc import Callable
 from typing import Any
+
+from app.core import config
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +23,7 @@ CAPABILITIES: dict[str, str] = {
     "kb": "知识库：md/txt 导入与关键词检索（P7）",
     "sandbox": "受限代码执行：隔离子进程跑 pandas 代码（P15）",
     "mcp": "MCP 插件：外部工具发现与白名单调用（P8）",
+    "memory": "会话与上下文：最近轮次 + 知识库/技能/口径一次给全（P10）",
 }
 
 _FACTORIES: dict[str, Callable[[], Any]] = {}
@@ -146,3 +149,13 @@ def _mcp_capability():
 
 
 register("mcp", _mcp_capability)
+
+
+def _memory_capability():
+    """memory 能力：ENABLE_MEMORY 打开才可用，返回 services.memory 模块。"""
+    from app.services import memory
+
+    return memory if config.ENABLE_MEMORY else None
+
+
+register("memory", _memory_capability)

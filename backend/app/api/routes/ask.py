@@ -19,7 +19,7 @@ from app.api.deps import get_dataset
 from app.api.routes.insight import attach_insight
 from app.core import config, db
 from app.schemas import AskIn
-from app.services import agent, insight, llm, nlu, store, stream
+from app.services import agent, insight, llm, memory, nlu, store, stream
 
 router = APIRouter()
 
@@ -34,7 +34,7 @@ def ask(payload: AskIn) -> dict:
     if not question:
         raise HTTPException(status_code=400, detail="问题不能为空")
     body = _ask_body(question, session_id, dataset_id, dataset)
-    body = attach_insight(body, question, dataset)
+    body = attach_insight(body, question, dataset, memory.insight_context(question, session_id))
     # K-005：Agent 路径原本不写 tasks，提问历史只留在响应里；这里落一行，degraded 也记进去
     degraded = body.get("degraded") or []
     store.insert_task(
@@ -50,6 +50,7 @@ def ask(payload: AskIn) -> dict:
             "error": (body.get("message") or "") if degraded else "",
         }
     )
+    memory.add_turn(session_id, question, body.get("sql") or "", body.get("columns") or [], body.get("insight"), False)
     return body
 
 
@@ -194,7 +195,9 @@ async def _stream_frames(request: Request, question: str, session_id: str | None
         if await _gone(request):
             mark_canceled(body.get("sql") or "")
             return
-        body = await run_in_threadpool(attach_insight, body, question, dataset)
+        body = await run_in_threadpool(
+            attach_insight, body, question, dataset, memory.insight_context(question, session_id)
+        )
         for tag in [str(item) for item in body.get("degraded") or [] if str(item) not in sent]:
             yield stream.sse("degraded", {"stage": "insight", "reason": tag})
         yield stream.sse(

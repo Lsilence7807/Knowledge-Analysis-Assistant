@@ -14,6 +14,8 @@ charset-normalizer # why: 中文 CSV 多为 GBK，自动识别编码 | 阶段 P1
 pydantic           # why: HTTP 边界与 LLM 输出校验 | 阶段 P0
 openai             # why: OpenAI 兼容客户端（direct 回落路径）；厂商与路由交给 litellm | 阶段 P3
 litellm            # why: 模型层：模型组/回退/重试/结构化输出/成本（F3 换掉自研分支） | 阶段 F3(P9)
+langgraph          # why: agent 图：规划节点/工具节点/条件边（F4 换掉手写 while 循环） | 阶段 F4(P13)
+langgraph-checkpoint-sqlite  # why: 会话状态落 SQLite（SqliteSaver） | 阶段 F4(P10)
 
 # --- 运行期：扩展阶段 ---
 mcp                # why: 官方 MCP 客户端 SDK | 阶段 P8

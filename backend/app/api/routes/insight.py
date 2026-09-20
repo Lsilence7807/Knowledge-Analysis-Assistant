@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException
 from app.api.deps import get_dataset
 from app.core import db
 from app.schemas import InsightIn
-from app.services import insight
+from app.services import insight, memory
 
 router = APIRouter()
 
@@ -24,17 +24,21 @@ def explain(payload: InsightIn) -> dict:
         {"dataset_id": payload.dataset_id, **result, "degraded": [], "message": ""},
         payload.question.strip(),
         dataset,
+        memory.insight_context(payload.question.strip(), None),
     )
 
 
-def attach_insight(body: dict, question: str, dataset: dict) -> dict:
-    """给结果表补 insight：没有行就不解读；模型失败只追加 degraded，绝不改表格结果。"""
+def attach_insight(body: dict, question: str, dataset: dict, prior: list[str] | None = None) -> dict:
+    """给结果表补 insight：没有行就不解读；模型失败只追加 degraded，绝不改表格结果。
+
+    prior 是 §4.5 承诺的上下文（轮次 + 知识库片段 + 技能 + 指标口径），由 memory 一次给全。
+    """
     body.setdefault("insight", None)
     if not body.get("rows"):
         return body
     profile = {**dataset["profile"], "table": dataset["table_name"]}
     try:
-        body["insight"] = insight.summarize(question, body, profile, []).model_dump()
+        body["insight"] = insight.summarize(question, body, profile, list(prior or [])).model_dump()
     except insight.InsightError as exc:
         body["degraded"] = [*body.get("degraded", []), exc.code]
         body["message"] = body.get("message") or str(exc)
