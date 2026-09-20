@@ -72,6 +72,7 @@ def test_ask_returns_result_table(client, with_key, monkeypatch):
     assert body["sql"] == GOOD_SQL
     assert body["columns"] == ["region", "total"]
     assert body["rows"] == [["华北", 84], ["华南", 77], ["华东", 70]]
+    assert body["row_count"] == 3 and body["truncated"] is False
     assert body["task_id"].startswith("t_") and body["dataset_id"] == "d_test"
     assert body["cached"] is False and body["reused_sql"] is False
 

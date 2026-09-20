@@ -121,6 +121,8 @@ def ask(payload: dict = Body(...)) -> dict:
         "sql": "",
         "columns": [],
         "rows": [],
+        "row_count": 0,
+        "truncated": False,
         "steps": [],
         "cached": False,
         "reused_sql": False,
@@ -146,5 +148,6 @@ def ask(payload: dict = Body(...)) -> dict:
         "sql": result["sql"],
         "columns": result["columns"],
         "rows": result["rows"],
+        "row_count": result["row_count"],
         "truncated": result["truncated"],
     }
