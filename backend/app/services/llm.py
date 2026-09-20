@@ -61,6 +61,35 @@ def chat_json(system: str, user: str, schema: type, model_id: str | None = None)
     raise LLMError(f"模型输出不符合契约：{last}")
 
 
+def embed(texts: list[str]) -> list[list[float]]:
+    """文本向量（§4.2）：厂商调用交 LiteLLM 的 embedding；缺 profile 或缺密钥抛 LLMUnavailable 让调用方回退。"""
+    payload = [str(text) for text in texts]
+    if not payload:
+        return []
+    profile = llm_models.embedding_profile()
+    key = config.api_key(profile or {})
+    if not profile or not key:
+        raise LLMUnavailable(
+            "没有可用的 embedding profile：在 config/models.json 的 embedding 块里配一个，"
+            "或给某个 profile 的 purpose 加 embedding"
+        )
+    import litellm
+
+    params = {
+        "model": llm_models.litellm_model(profile),
+        "api_key": key,
+        "input": payload,
+        "timeout": profile.get("timeout_s", 30),
+    }
+    if profile.get("base_url"):
+        params["api_base"] = profile["base_url"]
+    try:
+        response = litellm.embedding(**params)
+    except Exception as exc:  # 网络、鉴权、模型名不对一律当这一层不可用
+        raise LLMError(f"embedding 调用失败：{_clip(exc)}") from exc
+    return [list(item["embedding"]) for item in response.data]
+
+
 def _complete(messages: list[dict], model: dict) -> str:
     """取原始文本的唯一网络出口；测试直接替换它（保持两参签名）。"""
     if config.LLM_BACKEND == "direct":

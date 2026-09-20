@@ -16,6 +16,10 @@ openai             # why: OpenAI 兼容客户端（direct 回落路径）；厂�
 litellm            # why: 模型层：模型组/回退/重试/结构化输出/成本（F3 换掉自研分支） | 阶段 F3(P9)
 langgraph          # why: agent 图：规划节点/工具节点/条件边（F4 换掉手写 while 循环） | 阶段 F4(P13)
 langgraph-checkpoint-sqlite  # why: 会话状态落 SQLite（SqliteSaver） | 阶段 F4(P10)
+llama-index-core   # why: 知识库分块/索引/召回与语义缓存检索（F5 换掉手写 FTS 单通道） | 阶段 F5(P14)
+llama-index-embeddings-litellm  # why: LlamaIndex 的 embedding 口子接到 LiteLLM | 阶段 F5
+llama-index-vector-stores-lancedb  # why: 向量落 LanceDB 的官方适配 | 阶段 F5
+lancedb            # why: 内嵌向量库（data/vectors） | 阶段 F5(P14)
 
 # --- 运行期：扩展阶段 ---
 mcp                # why: 官方 MCP 客户端 SDK | 阶段 P8

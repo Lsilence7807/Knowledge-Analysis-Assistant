@@ -22,6 +22,8 @@ ENABLE_AGENT = os.getenv("ENABLE_AGENT", "true").lower() == "true"
 ENABLE_MEMORY = os.getenv("ENABLE_MEMORY", "true").lower() == "true"
 # 问答复用缓存：关掉退化成每次都真跑
 ENABLE_CACHE = os.getenv("ENABLE_CACHE", "true").lower() == "true"
+# 语义检索与语义缓存：关掉回退 FTS5 与精确键（缺 embedding 配置时也自动回退）
+ENABLE_SEMANTIC_CACHE = os.getenv("ENABLE_SEMANTIC_CACHE", "true").lower() == "true"
 EXEC_MAX_WORKERS = int(os.getenv("EXEC_MAX_WORKERS", "4"))
 
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
@@ -33,6 +35,8 @@ LOCAL_SETTINGS = BASE_DIR / "config" / "local.json"
 BENCH_BASELINE = BASE_DIR / "bench" / "baseline.json"
 # LangGraph 的会话状态（SqliteSaver 自己建表，与元数据库分开存）
 CHECKPOINT_PATH = DATA_DIR / "checkpoints.sqlite"
+# LanceDB 向量库落点（知识库分块与语义缓存的向量都在这儿，两个表）
+VECTORS_DIR = DATA_DIR / "vectors"
 # 前端构建产物落点（Vite 产出、gitignore）：F2b 起由 main.create_app 挂成页面，缺了给可读提示
 FRONTEND_DIST = Path(os.getenv("FRONTEND_DIST", str(BASE_DIR / "web" / "dist")))
 

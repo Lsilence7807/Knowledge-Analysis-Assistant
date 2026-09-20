@@ -125,6 +125,20 @@ def purpose_groups() -> dict[str, list[str]]:
     return groups
 
 
+def embedding_profile() -> dict | None:
+    """embedding 用的 profile：models.json 的 `embedding` 块优先，其次 purpose 里写了 embedding 的 profile。"""
+    try:
+        block = _config().get("embedding")
+    except ModelNotFound:
+        block = None
+    if isinstance(block, dict):
+        return dict(block)
+    for model in list_models():
+        if "embedding" in (model.get("purpose") or []):
+            return model
+    return None
+
+
 def litellm_model(model: dict) -> str:
     """profile → LiteLLM 的 model 串：默认按 OpenAI 兼容端点走，写了厂商前缀的原样透传。"""
     name = str(model.get("model"))

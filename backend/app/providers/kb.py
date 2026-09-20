@@ -1,15 +1,20 @@
 # 文件：backend/app/providers/kb.py
 # 作用：知识库：导入项目内的 md/txt 文档 → 分块入库 → FTS5 检索，回带出处的片段（按 §7 当不可信数据包裹）
-# 阶段：P7 知识库（关键词）
-# 依赖：标准库 os、re、pathlib、backend/app/core/config.py、backend/app/services/store.py
+# 阶段：P7 知识库（关键词）；F5 加语义召回（LlamaIndex 检索器 + LanceDB，FTS5 仍保留为降级）
+# 依赖：标准库 hashlib、logging、os、re、pathlib、llama_index.core、backend/app/core/{config,vectors}.py、
+#       backend/app/services/{llm,store}.py
 from __future__ import annotations
 
+import hashlib
+import logging
 import os
 import re
 from pathlib import Path
 
-from app.core import config
-from app.services import store
+from app.core import config, vectors
+from app.services import llm, store
+
+logger = logging.getLogger(__name__)
 
 ENABLED = os.getenv("ENABLE_KB", "false").lower() == "true"
 ROOT_DIR = config.BASE_DIR
@@ -97,8 +102,67 @@ def _store_doc(item: Path, text: str, source_type: str) -> dict:
     chunks = chunk_text(text)
     if not chunks:
         raise KbError(f"{item.name} 里没有可入库的正文")
-    store.replace_kb_doc({"path": _relative(item), "title": item.stem, "source_type": source_type}, chunks)
-    return {"path": _relative(item), "title": item.stem, "chunks": len(chunks)}
+    rel_path = _relative(item)
+    store.replace_kb_doc({"path": rel_path, "title": item.stem, "source_type": source_type}, chunks)
+    semantic = _add_vectors(rel_path, item.stem, chunks)
+    return {"path": rel_path, "title": item.stem, "chunks": len(chunks), "vectors": semantic}
+
+
+def _node_id(rel_path: str, chunk_no: int) -> str:
+    """向量行的 id：路径与块号散列成纯字母数字（LanceDB 的 id 谓词对特殊字符不友好）。"""
+    digest = hashlib.sha1(rel_path.encode("utf-8")).hexdigest()[:12]
+    return f"kb_{digest}_{int(chunk_no)}"
+
+
+def _add_vectors(rel_path: str, title: str, chunks: list[str]) -> int:
+    """把分块灌进向量库（语义召回用）；没开语义层、没 embedding 配置或调用失败都只跳过，FTS 才是权威。"""
+    if not config.ENABLE_SEMANTIC_CACHE:
+        return 0
+    try:
+        from llama_index.core.schema import TextNode
+
+        table = vectors.store("kb")
+        nodes = [
+            TextNode(
+                id_=_node_id(rel_path, n),
+                text=text,
+                metadata={"path": rel_path, "title": title, "chunk_no": n},
+            )
+            for n, text in enumerate(chunks, 1)
+        ]
+        # 重导入同一份文档：先按 id 删掉旧行，别让新旧两层向量并存
+        vectors.delete_ids(table, [node.node_id for node in nodes])
+        for node, embedding in zip(nodes, llm.embed([node.text for node in nodes]), strict=True):
+            node.embedding = embedding
+        table.add(nodes)
+    except (llm.LLMUnavailable, llm.LLMError, OSError, ImportError) as exc:
+        logger.warning("知识库向量入库跳过（回退 FTS5）：%s", exc)
+        return 0
+    return len(nodes)
+
+
+def _semantic_hits(text: str, wanted: int) -> list[dict]:
+    """向量召回：检索器与索引全用 LlamaIndex，向量落 LanceDB；报错就返回空由 FTS5 兜。"""
+    if not config.ENABLE_SEMANTIC_CACHE:
+        return []
+    try:
+        from llama_index.core import VectorStoreIndex
+
+        index = VectorStoreIndex.from_vector_store(vectors.store("kb"), embed_model=vectors.LiteLLMEmbedding())
+        nodes = index.as_retriever(similarity_top_k=wanted).retrieve(text)
+    except (llm.LLMUnavailable, llm.LLMError, OSError, ImportError, ValueError, vectors.TableNotFoundError) as exc:
+        logger.warning("知识库语义召回不可用（回退 FTS5）：%s", exc)
+        return []
+    return [
+        {
+            "path": (node.metadata or {}).get("path"),
+            "title": (node.metadata or {}).get("title"),
+            "chunk_no": (node.metadata or {}).get("chunk_no"),
+            "score": node.score,
+            "content": node.text,
+        }
+        for node in nodes
+    ]
 
 
 def import_path(path: str = "") -> dict:
@@ -130,8 +194,17 @@ def search(query: str = "", limit: int | str | None = None) -> dict:
         wanted = int(limit) if limit else MAX_HITS
     except (TypeError, ValueError):
         wanted = MAX_HITS
-    hits = store.search_kb(text, max(1, min(wanted, MAX_HITS)))
-    return {"query": text, "hits": [format_hit(hit) for hit in hits]}
+    size = max(1, min(wanted, MAX_HITS))
+    # 语义优先、FTS 兜底：同一 (文档, 块号) 只留一条，向量命中排在前面（K-032 的中文召回靠这一层缓解）
+    merged: list[dict] = []
+    seen: set = set()
+    for hit in [*_semantic_hits(text, size), *store.search_kb(text, size)]:
+        mark = (hit.get("path"), hit.get("chunk_no"))
+        if mark in seen:
+            continue
+        seen.add(mark)
+        merged.append(hit)
+    return {"query": text, "hits": [format_hit(hit) for hit in merged[:size]]}
 
 
 def format_hit(hit: dict) -> dict:

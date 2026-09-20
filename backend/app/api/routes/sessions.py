@@ -38,7 +38,11 @@ def session_ask(sid: str, payload: SessionAskIn) -> dict:
     dataset_id = payload.dataset_id or session["dataset_id"]
     dataset = get_dataset(dataset_id)
     key = cache.key(dataset_id, dataset["table_version"], session.get("model_id") or "", question)
+    vector = cache.question_vector(question)
     hit = cache.lookup(key) if config.ENABLE_CACHE else None
+    if hit is None and vector:
+        # 同义问法：精确键不中时问向量层（F5 的语义缓存，只复用 SQL、结论重算）
+        hit = cache.lookup_semantic(dataset_id, dataset["table_version"], vector)
     reused = bool(hit and hit.get("sql"))
     if reused:
         body = _reuse_body(hit, dataset_id)
@@ -61,7 +65,7 @@ def session_ask(sid: str, payload: SessionAskIn) -> dict:
         }
     )
     if not reused and body.get("sql") and not body.get("degraded"):
-        cache.store_hit(key, dataset_id, question, body["sql"], body.get("insight"))
+        cache.store_hit(key, dataset_id, question, body["sql"], body.get("insight"), vector)
     memory.add_turn(sid, question, body.get("sql") or "", body.get("columns") or [], body.get("insight"), reused)
     return body
 

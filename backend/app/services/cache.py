@@ -6,10 +6,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 from contextlib import closing
 
-from app.services import store
+from app.core import config, vectors
+from app.services import llm, store
+
+logger = logging.getLogger(__name__)
 
 PUNCT = re.compile(r"[\s，。？！、：；,.?!:;\"'（）()\[\]【】]+")  # 只影响归一化，不删字
 DDL = (
@@ -50,8 +54,37 @@ def lookup(k: str) -> dict | None:
     return dict(row)
 
 
+def question_vector(question: str) -> list[float] | None:
+    """把问题转成向量；没开语义层或没有 embedding 配置时返回 None（调用方直接走精确键）。"""
+    if not config.ENABLE_SEMANTIC_CACHE or not (question or "").strip():
+        return None
+    try:
+        return llm.embed([question])[0]
+    except (llm.LLMUnavailable, llm.LLMError) as exc:
+        logger.warning("语义缓存不可用（回退精确键）：%s", exc)
+        return None
+
+
 def lookup_semantic(dataset_id: str, table_version: int, vector: list[float], threshold: float = 0.93) -> dict | None:
-    """语义命中：向量库由 F5 落地，这里先恒不命中（回退精确键）。"""
+    """语义命中（§4.2）：向量检索用 LlamaIndex，命中的行再从 qa_cache 取回；同数据集同表版本且相似度过线才算。"""
+    if not vector or not config.ENABLE_SEMANTIC_CACHE:
+        return None
+    try:
+        from llama_index.core.vector_stores.types import VectorStoreQuery
+
+        result = vectors.store("qa_cache").query(VectorStoreQuery(query_embedding=list(vector), similarity_top_k=5))
+    except (OSError, ImportError, ValueError, vectors.TableNotFoundError) as exc:
+        logger.warning("语义缓存检索失败（回退精确键）：%s", exc)
+        return None
+    for node, score in zip(result.nodes, result.similarities or [], strict=False):
+        meta = node.metadata or {}
+        if str(meta.get("dataset_id")) != str(dataset_id) or int(meta.get("table_version") or 0) != int(table_version):
+            continue
+        if score is None or float(score) < float(threshold):
+            continue
+        row = lookup(str(meta.get("key") or node.node_id))
+        if row:
+            return row
     return None
 
 
@@ -60,6 +93,7 @@ def store_hit(
 ) -> None:
     """写一条缓存；表版本取数据集当前版本（失效靠它而不是删表）。"""
     ensure_tables()
+    _remember_vector(k, dataset_id, question, vector)
     with closing(store.connect()) as conn:
         dataset = conn.execute("SELECT table_version FROM datasets WHERE id = ?", (dataset_id,)).fetchone()
         conn.execute(
@@ -80,12 +114,48 @@ def store_hit(
         conn.commit()
 
 
+def _remember_vector(k: str, dataset_id: str, question: str, vector: list[float] | None) -> None:
+    """把这条缓存的问题向量写进 LanceDB（语义命中的索引）；失败只记日志，精确键不受影响。"""
+    if not vector or not config.ENABLE_SEMANTIC_CACHE:
+        return
+    try:
+        from llama_index.core.schema import TextNode
+
+        table = vectors.store("qa_cache")
+        vectors.delete_ids(table, [k])
+        node = TextNode(
+            id_=k,
+            text=norm(question),
+            metadata={"key": k, "dataset_id": str(dataset_id)},
+            embedding=list(vector),
+        )
+        node.metadata["table_version"] = int(_version(dataset_id))
+        table.add([node])
+    except (OSError, ImportError, ValueError, vectors.TableNotFoundError) as exc:
+        logger.warning("语义缓存向量未写入（精确键照用）：%s", exc)
+
+
+def _version(dataset_id: str) -> int:
+    """数据集当前表版本（语义命中要比对，旧版本不能复用）。"""
+    with closing(store.connect()) as conn:
+        row = conn.execute("SELECT table_version FROM datasets WHERE id = ?", (dataset_id,)).fetchone()
+    return int(row["table_version"] if row else 1)
+
+
 def invalidate(dataset_id: str) -> int:
     """删掉某数据集的全部缓存，返回条数（删数据集/重导入时用）。"""
     with closing(store.connect()) as conn:
         removed = conn.execute("DELETE FROM qa_cache WHERE dataset_id = ?", (dataset_id,)).rowcount
         conn.commit()
     return max(0, int(removed))
+
+
+def _vector_rows() -> int:
+    """语义层索引里有多少条（表还没建过就是 0）。"""
+    try:
+        return vectors.row_count(vectors.store("qa_cache"))
+    except (OSError, ImportError, ValueError, vectors.TableNotFoundError):
+        return 0
 
 
 def stats() -> dict:
@@ -100,5 +170,10 @@ def stats() -> dict:
             "hits": hits,
             "hit_rate": round(hits / (hits + entries), 4) if entries or hits else 0.0,
         },
-        "semantic": {"entries": 0, "hits": 0, "hit_rate": 0.0, "enabled": False},
+        "semantic": {
+            "entries": _vector_rows(),
+            "hits": 0,
+            "hit_rate": 0.0,
+            "enabled": bool(config.ENABLE_SEMANTIC_CACHE),
+        },
     }
