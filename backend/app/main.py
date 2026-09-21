@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
@@ -49,6 +49,13 @@ BUILD_HINT = (
 )
 
 
+# 页面 HTML 一律不缓存：/datasets、/skills 的页面路径与接口同 URL，浏览器会把文档缓存拿去应答页面的 fetch
+NO_STORE = {"cache-control": "no-store"}
+
+# 与接口同名的页面路径：GET /datasets、GET /skills 都是真接口，浏览器导航要先给页面（见 spa_over_api）
+SPA_PATHS = frozenset({"/datasets", "/skills"})
+
+
 def create_app() -> FastAPI:
     """装配应用：API 路由先挂，前端产物垫底，最后兜 SPA 回退。"""
     # 开认证时关掉框架自带的 schema 与 Swagger：这三条路由挂在 app 上，
@@ -79,6 +86,19 @@ def create_app() -> FastAPI:
         )
     application.include_router(api_router)
 
+    @application.middleware("http")
+    async def spa_over_api(request: Request, call_next):
+        """页面路径与接口路径撞名时（见 SPA_PATHS），浏览器导航先给页面，别甩一坨 JSON 回去。
+
+        页面路径是 F2 定的、接口路径是 §4.3 冻结的，所以按 Accept 分流：浏览器导航带 text/html，
+        fetch 与脚本客户端不带，接口契约一个字不变。
+        """
+        wants_html = "text/html" in (request.headers.get("accept") or "")
+        index = config.FRONTEND_DIST / "index.html"
+        if request.method == "GET" and request.url.path in SPA_PATHS and wants_html and index.is_file():
+            return FileResponse(index, headers=NO_STORE)
+        return await call_next(request)
+
     if (config.FRONTEND_DIST / "assets").is_dir():
         application.mount("/assets", StaticFiles(directory=config.FRONTEND_DIST / "assets"), name="assets")
 
@@ -97,7 +117,7 @@ def create_app() -> FastAPI:
             # 只许取 dist 内的文件，挡掉 ../ 之类的越界路径
             if candidate.is_file() and candidate.is_relative_to(dist.resolve()):
                 return FileResponse(candidate)
-        return FileResponse(index)
+        return FileResponse(index, headers=NO_STORE)
 
     return application
 

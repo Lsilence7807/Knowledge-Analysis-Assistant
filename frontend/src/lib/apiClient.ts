@@ -38,6 +38,8 @@ export async function fetchJson<T>(path: string, init?: RequestInit): Promise<T>
     redirectToLogin(res.status);
     throw new Error(errorDetail(body) ?? `HTTP ${res.status}`);
   }
+  // 200 但正文不是 JSON（缓存拿错、网关页之类）：以前静默返回 null，页面就空着不报错
+  if (body === null) throw new Error(`响应不是 JSON（HTTP ${res.status}）`);
   return body as T;
 }
 

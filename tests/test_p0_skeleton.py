@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core import config
-from app.main import app
+from app.main import SPA_PATHS, app
 from app.providers import kb, skills
 from app.services import store
 
@@ -72,3 +72,14 @@ def test_unknown_path_serves_frontend(client):
         assert resp.status_code == 503
     # 接口层 404 不变：不存在的数据集仍按 §4.3 回 404（SPA 回退不许吃掉接口的报错）
     assert client.get("/datasets/no-such-id/profile").status_code == 404
+
+
+def test_page_paths_that_collide_with_api_paths_serve_html(client):
+    """页面路径与接口路径撞名（/datasets、/skills）：浏览器导航拿页面，接口客户端照旧拿 JSON。"""
+    if not (config.FRONTEND_DIST / "index.html").is_file():
+        pytest.skip("没构建前端：这条要有 dist 才有意义")
+    for path in sorted(SPA_PATHS):
+        page = client.get(path, headers={"accept": "text/html,application/xhtml+xml"})
+        assert page.status_code == 200 and 'id="root"' in page.text, path
+        # fetch 与脚本客户端不带 text/html：还得走接口（列表/401 都是 JSON，说明没被页面顶掉）
+        assert client.get(path).headers["content-type"].startswith("application/json"), path
