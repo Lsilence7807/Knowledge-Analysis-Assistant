@@ -109,7 +109,8 @@ def test_tampered_cookie_is_401(client):
     _login(client)
     token = client.cookies.get(security.COOKIE_NAME)
     assert token
-    client.cookies.set(security.COOKIE_NAME, token[:-1] + ("a" if token[-1] != "a" else "b"))
+    # 篡改第一位而不是最后一位：url-safe base64 的末位带填充位，翻末位有时会解出同一串字节（偶发假绿）
+    client.cookies.set(security.COOKIE_NAME, ("a" if token[0] != "a" else "b") + token[1:])
     assert client.get("/datasets").status_code == 401
 
 

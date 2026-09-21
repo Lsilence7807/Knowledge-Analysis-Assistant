@@ -21,6 +21,7 @@ EXPECTED_TABLES = {
     "capability_log",
     "datasets",
     "eval_runs",
+    "jobs",
     "kb_docs",
     "kb_fts",
     "qa_cache",

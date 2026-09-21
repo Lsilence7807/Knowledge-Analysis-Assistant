@@ -19,7 +19,18 @@ logger = logging.getLogger(__name__)
 ENABLED = os.getenv("ENABLE_KB", "false").lower() == "true"
 ROOT_DIR = config.BASE_DIR
 DEFAULT_DIR = "kb"
-ALLOWED_SUFFIXES = (".md", ".txt")
+ALLOWED_SUFFIXES = (".md", ".txt", ".pdf", ".docx")  # P19 起 PDF/Word 也收，解析交 providers/docs.py
+DOC_SUFFIXES = (".pdf", ".docx")
+
+_parser = None  # 由 registry 注入 providers/docs.extract：两个 provider 不互相 import（K-037 口径）
+
+
+def bind_parser(fn) -> None:
+    """注入 PDF/Word 解析后端；传 None 表示只能导入 md/txt（解析器一个都没装时）。"""
+    global _parser
+    _parser = fn
+
+
 MAX_CHUNK_CHARS = 500
 MAX_HITS = 5
 SNIPPET_CHARS = 200
@@ -85,6 +96,14 @@ def read_doc(path: Path) -> tuple[str, str]:
     except OSError as exc:
         raise KbError(f"文件读不出来：{exc}") from exc
     # 扩展名像文本、内容其实是二进制（真会遇到）：NUL 直接判死，再按两种常见编码试解
+    if suffix in DOC_SUFFIXES:
+        # PDF/Word 是二进制容器，不是编码问题：交给解析后端，失败原因原样透出（加密、损坏等）
+        if _parser is None:
+            raise KbError(f"{suffix} 解析后端不可用（没装 markitdown / pypdf 之类），先转成 md/txt：{path.name}")
+        try:
+            return _parser(path)
+        except Exception as exc:
+            raise KbError(str(exc)) from exc
     if b"\x00" in raw:
         raise KbError(f"看起来是二进制文件，已拒绝：{path.name}")
     for encoding in ("utf-8", "gb18030"):
@@ -164,7 +183,7 @@ def _semantic_hits(text: str, wanted: int) -> list[dict]:
 
 
 def import_path(path: str = "") -> dict:
-    """导入一份文档或一个目录下的全部 md/txt；目录里单个文件坏了只跳过它，不拖垮整批。"""
+    """导入一份文档或一个目录下的全部 md/txt/pdf/docx；单个文件坏了只跳过它，不拖垮整批。"""
     target = resolve_path(path)
     if target.is_file():
         # 点名的那份文件读不进来就整体失败（400）：回 200 + skipped 会让人以为它入库了

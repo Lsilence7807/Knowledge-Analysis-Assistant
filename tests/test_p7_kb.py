@@ -140,12 +140,16 @@ def test_binary_file_is_skipped(client, tmp_path):
 
 
 def test_unsupported_suffix_is_skipped_and_single_file_rejected(client, tmp_path):
+    """后缀白名单：不在名单里的被跳过；点名单文件时整体 400。
+
+    P19 起 pdf/docx 进了白名单（走 providers/docs.py 解析），所以这里换成仍不支持的旧版 .doc。
+    """
     _write_doc(tmp_path, "正常.md", "金额单位是万元。\n")
-    (tmp_path / "kb" / "报告.pdf").write_bytes(b"%PDF-1.4\n")
+    (tmp_path / "kb" / "报告.doc").write_bytes(b"\xd0\xcf\x11\xe0 old word")
     body = client.post("/kb/import", json={}).json()
-    assert [item["path"] for item in body["skipped"]] == ["kb/报告.pdf"]
+    assert [item["path"] for item in body["skipped"]] == ["kb/报告.doc"]
     assert "只支持" in body["skipped"][0]["error"]
-    assert client.post("/kb/import", json={"path": "kb/报告.pdf"}).status_code == 400
+    assert client.post("/kb/import", json={"path": "kb/报告.doc"}).status_code == 400
 
 
 def test_path_escape_is_rejected(client):

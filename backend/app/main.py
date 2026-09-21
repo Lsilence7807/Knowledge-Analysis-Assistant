@@ -2,6 +2,7 @@
 # 作用：应用工厂：装配 api 路由、生命周期与前端静态目录；只做装配，端点实现全在 api/routes/
 # 阶段：F1 后端骨架（原 app/main.py 的 554 行路由拆进 api/routes/*.py）
 #       F7 装配限流（slowapi）、跨域（CORS，按需）与「开了认证没设口令就拒绝启动」的自检
+#       F9 起装配后台作业：启动钩子、huey 消费者与 APScheduler
 # 依赖：FastAPI、slowapi、app/api/__init__.py、app/core/{config,security}.py、app/services/store.py
 from __future__ import annotations
 
@@ -18,7 +19,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from app.api import api_router
 from app.api.routes.ask import _stream_frames  # noqa: F401  test_p17_stream 按改造前的名字引用它
 from app.core import config, db, security
-from app.services import cache, memory, store
+from app.services import cache, jobs, memory, store
 
 
 @asynccontextmanager
@@ -32,7 +33,15 @@ async def lifespan(_: FastAPI):
     store.ensure_tables()
     memory.ensure_tables()
     cache.ensure_tables()
+    if jobs.enabled():
+        # P18：先把上次没跑完的作业标 interrupted，再起队列消费者与定时维护
+        store.mark_interrupted()
+        jobs.start_worker()
+        jobs.start_scheduler()
     yield
+    if jobs.enabled():
+        jobs.stop_scheduler()
+        jobs.stop_worker()
 
 
 BUILD_HINT = (

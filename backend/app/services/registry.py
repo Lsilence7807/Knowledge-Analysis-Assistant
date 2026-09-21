@@ -1,7 +1,7 @@
 # 文件：backend/app/services/registry.py
 # 作用：能力注册表：新能力的唯一接入点，provider 只在这里被惰性装配
 # 阶段：P0 骨架与契约冻结（P2 注册 stats；P3 注册 query、llm；P13 注册 agent；P6 注册 skills；P7 注册 kb；
-#       P15 注册 sandbox；P8 注册 mcp）
+#       P15 注册 sandbox；P8 注册 mcp；F9 注册 jobs）
 # 依赖：标准库 logging、backend/app/core/config.py
 from __future__ import annotations
 
@@ -24,6 +24,7 @@ CAPABILITIES: dict[str, str] = {
     "sandbox": "受限代码执行：隔离子进程跑 pandas 代码（P15）",
     "mcp": "MCP 插件：外部工具发现与白名单调用（P8）",
     "memory": "会话与上下文：最近轮次 + 知识库/技能/口径一次给全（P10）",
+    "jobs": "后台作业：长分析进队列、看进度与结果（P18，F9 落地）",
 }
 
 _FACTORIES: dict[str, Callable[[], Any]] = {}
@@ -117,13 +118,27 @@ register("skills", _skills_capability)
 
 
 def _kb_capability():
-    """kb 能力：ENABLE_KB 打开才可用，返回 providers.kb 模块（路由与工具从这里取用）。"""
-    from app.providers import kb
+    """kb 能力：ENABLE_KB 打开才可用，返回 providers.kb 模块（路由与工具从这里取用）。
 
+    F9：PDF/Word 的解析后端在 providers/docs.py，由这里注入给 kb——两个 provider 不互相 import。
+    """
+    from app.providers import docs, kb
+
+    kb.bind_parser(docs.extract if docs.ENABLED else None)
     return kb if kb.ENABLED else None
 
 
 register("kb", _kb_capability)
+
+
+def _jobs_capability():
+    """jobs 能力：ENABLE_JOBS 打开才可用，返回 services.jobs 模块（队列、进度与定时维护都在里面）。"""
+    from app.services import jobs
+
+    return jobs if jobs.enabled() else None
+
+
+register("jobs", _jobs_capability)
 
 
 def _sandbox_capability():

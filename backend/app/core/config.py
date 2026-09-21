@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     LANGFUSE_HOST: str = "https://cloud.langfuse.com"
     EVAL_GOLDEN: Path | None = None
     EVAL_BASELINE: Path | None = None
+    # F9 作业与文档：作业库（huey）、能力开关、PDF/Word 解析后端
+    ENABLE_JOBS: bool = False
+    HUEY_DB: Path | None = None
+    DOCS_BACKEND: str = "markitdown"
 
 
 _settings = Settings()
@@ -81,6 +85,15 @@ LANGFUSE_HOST = _settings.LANGFUSE_HOST
 EVAL_GOLDEN = Path(_settings.EVAL_GOLDEN) if _settings.EVAL_GOLDEN else BASE_DIR / "evals" / "golden.jsonl"
 EVAL_BASELINE = Path(_settings.EVAL_BASELINE) if _settings.EVAL_BASELINE else BASE_DIR / "evals" / "baseline.json"
 
+# F9：后台作业（§6 的 ENABLE_JOBS）、作业库与导出产物
+ENABLE_JOBS = _settings.ENABLE_JOBS
+HUEY_DB = Path(_settings.HUEY_DB) if _settings.HUEY_DB else DATA_DIR / "jobs.db"
+EXPORT_DIR = DATA_DIR / "exports"
+# Word 报告的 docxtpl 模板：模板是仓库资产，锚在仓库里，不跟 DATA_DIR 走
+REPORT_TEMPLATE = BASE_DIR / "backend" / "app" / "templates" / "report.docx"
+# PDF/Word 解析后端：markitdown（轻、无模型下载，默认）| docling（重解析，首次会下模型）
+DOCS_BACKEND = (_settings.DOCS_BACKEND or "markitdown").strip().lower()
+
 LLM_API_KEY = _settings.LLM_API_KEY
 # 模型层后端：litellm（默认）或 direct（原 OpenAI 单厂商客户端，LiteLLM 出问题时一键回落）
 LLM_BACKEND = _settings.LLM_BACKEND
@@ -99,6 +112,7 @@ FRONTEND_DIST = Path(_settings.FRONTEND_DIST or BASE_DIR / "web" / "dist")
 def ensure_dirs() -> None:
     """创建数据目录，幂等。"""
     (Path(DATA_DIR) / "files").mkdir(parents=True, exist_ok=True)
+    EXPORT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def local_settings() -> dict:

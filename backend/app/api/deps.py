@@ -22,6 +22,7 @@ CAPABILITY_HINTS = {
     "kb": "知识库能力未启用：设 ENABLE_KB=true 再重启服务",
     "sandbox": "代码沙箱未启用：设 ENABLE_SANDBOX=true 再重启服务",
     "mcp": "MCP 能力不可用：需要 ENABLE_MCP=true 且 config/mcp.json 里的 server 能启动",
+    "jobs": "后台作业未启用：设 ENABLE_JOBS=true 再重启服务",
 }
 
 

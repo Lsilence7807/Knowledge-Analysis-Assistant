@@ -1,11 +1,13 @@
 # 文件：backend/app/services/insight.py
 # 作用：结果表 → 结构化结论（Insight）；数字要能追溯到结果表，否则写进 caveats
 # 阶段：P4 洞察生成（K-009：findings 给行号即视为已追溯；K-018：标识符里的数字不算）
-# 依赖：json、re、backend/app/services/llm.py、backend/app/schemas/__init__.py
+# 依赖：json、re、langchain-core、backend/app/services/llm.py、backend/app/schemas/__init__.py
 from __future__ import annotations
 
 import json
 import re
+
+from langchain_core.prompts import ChatPromptTemplate
 
 from app.schemas import Insight
 from app.services import llm
@@ -24,7 +26,9 @@ class InsightError(RuntimeError):
         self.code = code
 
 
-SYSTEM = f"""你在解读一张数据分析的结果表（提示词版本 {PROMPT_VERSION}）。
+# 提示词走 ChatPromptTemplate（§11 的 LangChain 半截在 F9 补齐：F3 当时只落了 LiteLLM）
+_SYSTEM_PROMPT = ChatPromptTemplate.from_template(
+    """你在解读一张数据分析的结果表（提示词版本 {version}）。
 规则：
 1. 只依据给出的结果表说话；findings 里要用 "row" 指出这句话读的是结果表第几行（0 基，行号从上面的明细行数起），可以再给 "column" 写列名。
 2. 数字要么来自表里，要么是从指认的那些行算出来的（合计、比率、环比都算）；既不在表里、也指不出行的数字不要写。
@@ -34,13 +38,27 @@ SYSTEM = f"""你在解读一张数据分析的结果表（提示词版本 {PROMP
 输出 JSON：{{"summary": "一句话结论", "findings": [{{"title": "...", "detail": "...", "metric": "...", "direction": "up|down|flat", "row": 0, "column": "..."}}],
  "anomalies": [{{"column": "...", "row_hint": "...", "value": 0, "reason": "..."}}],
  "suggestions": [{{"action": "...", "rationale": "..."}}], "confidence": "low|medium|high", "caveats": ["..."]}}"""
+)
+
+_USER_PROMPT = ChatPromptTemplate.from_template(
+    """数据集：{{ table }}（{{ rows }} 行，{{ cols }} 列）
+问题：{{ question }}
+SQL：{{ sql }}
+结果表：{{ row_count }} 行（已截断：{{ truncated }}），列：{{ columns }}{{ body }}""",
+    template_format="jinja2",
+)
+
+
+def _system() -> str:
+    """渲染系统提示词：版本号进正文，与缓存的 PROMPT_VERSION 一起走。"""
+    return _SYSTEM_PROMPT.format_messages(version=PROMPT_VERSION)[0].content
 
 
 def summarize(question: str, result: dict, profile: dict, prior: list[str]) -> Insight:
     """结果表 → Insight；模型不可用或输出不合契约时抛 InsightError（带 degraded 标签）。"""
     user = _user_prompt(question, result, profile, prior)
     try:
-        insight = llm.chat_json(SYSTEM, user, Insight)
+        insight = llm.chat_json(_system(), user, Insight)
     except llm.LLMUnavailable as exc:
         raise InsightError(str(exc), "insight:llm") from exc
     except llm.LLMError as exc:  # chat_json 内部已按契约重试 1 次
@@ -58,19 +76,23 @@ def _user_prompt(question: str, result: dict, profile: dict, prior: list[str]) -
     """问题 + 结果表（限 MAX_ROWS 行）+ 数据画像，拼成给模型的一段说明。"""
     rows = result.get("rows") or []
     columns = [str(name) for name in (result.get("columns") or [])]
-    lines = [
-        f"数据集：{profile.get('table', '')}（{profile.get('rows', '?')} 行，{profile.get('cols', '?')} 列）",
-        f"问题：{question}",
-        f"SQL：{result.get('sql', '')}",
-        f"结果表：{len(rows)} 行（已截断：{bool(result.get('truncated'))}），列：{'、'.join(columns)}",
-    ]
     # default=str：结果表里可能有 datetime（DuckDB 直接给 Python 对象），不兜底会 TypeError 打成 500
-    lines += [json.dumps(row, ensure_ascii=False, default=str) for row in rows[:MAX_ROWS]]
+    extras = [json.dumps(row, ensure_ascii=False, default=str) for row in rows[:MAX_ROWS]]
     if len(rows) > MAX_ROWS:
-        lines.append(f"（只给了前 {MAX_ROWS} 行）")
+        extras.append(f"（只给了前 {MAX_ROWS} 行）")
     if prior:
-        lines.append("补充上下文：" + "；".join(prior))
-    return "\n".join(lines)
+        extras.append("补充上下文：" + "；".join(prior))
+    return _USER_PROMPT.format_messages(
+        table=profile.get("table", ""),
+        rows=profile.get("rows", "?"),
+        cols=profile.get("cols", "?"),
+        question=question,
+        sql=result.get("sql", ""),
+        row_count=len(rows),
+        truncated=bool(result.get("truncated")),
+        columns="、".join(columns),
+        body=("\n" + "\n".join(extras)) if extras else "",
+    )[0].content
 
 
 def unsupported_numbers(insight: Insight, result: dict) -> list[str]:

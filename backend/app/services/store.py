@@ -14,7 +14,7 @@ from sqlalchemy import delete, func, select, text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core import config, db
-from app.models import AgentStep, CapabilityLog, Dataset, EvalRun, KbDoc, Skill, Task, TraceSpan
+from app.models import AgentStep, CapabilityLog, Dataset, EvalRun, Job, KbDoc, Skill, Task, TraceSpan, Turn
 
 logger = logging.getLogger(__name__)
 
@@ -345,6 +345,148 @@ def trace_stats(days: int = 7) -> dict:
             for span in slowest
         ],
     }
+
+
+def insert_job(job: dict) -> None:
+    """写入一个作业（jobs 表，§4.4）：入参与结果都序列化成 JSON 存一行。"""
+    ensure_tables()
+    with db.session() as session:
+        session.add(
+            Job(
+                id=job["id"],
+                kind=job.get("kind"),
+                payload_json=json.dumps(job.get("payload") or {}, ensure_ascii=False),
+                status=job.get("status") or "queued",
+                progress=float(job.get("progress") or 0.0),
+                result_json=json.dumps(job.get("result") or {}, ensure_ascii=False),
+                error=job.get("error") or "",
+            )
+        )
+        session.commit()
+
+
+def _job_row(row: Job) -> dict:
+    """ORM 行转字典：payload 与 result 都还原成对象，调用方不用再解一遍 JSON。"""
+    return {
+        "id": row.id,
+        "kind": row.kind,
+        "payload": json.loads(row.payload_json or "{}"),
+        "status": row.status,
+        "progress": row.progress or 0.0,
+        "result": json.loads(row.result_json) if row.result_json else {},
+        "error": row.error or "",
+        "created_at": row.created_at or "",
+        "updated_at": row.updated_at or "",
+    }
+
+
+def get_job(job_id: str) -> dict | None:
+    """按 id 取作业，没有回 None（路由翻成 404）。"""
+    with db.session() as session:
+        row = session.get(Job, job_id)
+        return _job_row(row) if row is not None else None
+
+
+def update_job(job_id: str, **fields) -> dict | None:
+    """改状态/进度/结果并刷新 updated_at；作业不存在回 None。"""
+    with db.session() as session:
+        row = session.get(Job, job_id)
+        if row is None:
+            return None
+        if "status" in fields:
+            row.status = fields["status"]
+        if "progress" in fields:
+            row.progress = float(fields["progress"])
+        if "error" in fields:
+            row.error = fields["error"]
+        if "result" in fields:
+            row.result_json = json.dumps(fields["result"] or {}, ensure_ascii=False)
+        row.updated_at = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
+        session.commit()
+        return _job_row(row)
+
+
+def list_jobs(limit: int = 20) -> list[dict]:
+    """最近的作业，新的在前。"""
+    with db.session() as session:
+        rows = session.execute(select(Job).order_by(Job.created_at.desc(), Job.id.desc()).limit(limit)).scalars()
+        return [_job_row(row) for row in rows]
+
+
+def find_active_job(kind: str, payload: dict) -> dict | None:
+    """同一入参已在排队/执行中的作业：重复提交时回同一个 job_id（P18 反例口径）。
+
+    payload_json 的键序不保证稳定，比对前按 sort_keys 归一，免得顺序不同就当成两次提交。
+    """
+    wanted = json.dumps(payload or {}, ensure_ascii=False, sort_keys=True)
+    with db.session() as session:
+        rows = session.execute(select(Job).where(Job.kind == kind, Job.status.in_(("queued", "running")))).scalars()
+        for row in rows:
+            if json.dumps(json.loads(row.payload_json or "{}"), ensure_ascii=False, sort_keys=True) == wanted:
+                return _job_row(row)
+    return None
+
+
+def mark_interrupted() -> int:
+    """启动钩子：上次没跑完的作业标 interrupted（重启后它们再也不会被执行）。"""
+    stamp = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
+    with db.session() as session:
+        rows = session.execute(select(Job).where(Job.status.in_(("queued", "running")))).scalars().all()
+        for row in rows:
+            row.status = "interrupted"
+            row.error = row.error or "服务重启时作业还没跑完"
+            row.updated_at = stamp
+        session.commit()
+        return len(rows)
+
+
+def prune_jobs(days: int = 7) -> int:
+    """清掉 N 天前的终态作业（APScheduler 每天调一次）；排队与执行中的一律不动。"""
+    since = (datetime.now(UTC) - timedelta(days=max(int(days), 0))).strftime("%Y-%m-%d %H:%M:%S")
+    with db.session() as session:
+        result = session.execute(
+            delete(Job).where(Job.status.in_(("done", "failed", "interrupted")), Job.created_at < since)
+        )
+        session.commit()
+        return int(result.rowcount or 0)
+
+
+def get_task(task_id: str) -> dict | None:
+    """按 id 取一行任务（导出报告要问题与 SQL）。"""
+    with db.session() as session:
+        row = session.get(Task, task_id)
+        if row is None:
+            return None
+        return {
+            "id": row.id,
+            "dataset_id": row.dataset_id,
+            "session_id": row.session_id,
+            "kind": row.kind,
+            "question": row.question,
+            "sql": row.sql,
+            "status": row.status,
+            "degraded": json.loads(row.degraded_json or "[]"),
+            "error": row.error,
+            "created_at": row.created_at,
+        }
+
+
+def latest_insight(session_id: str, question: str) -> str:
+    """某次提问的结论摘要（导出报告用）：turns 里按会话与问题取最近一条，没有回空串。"""
+    if not session_id or not question:
+        return ""
+    with db.session() as session:
+        row = (
+            session.execute(
+                select(Turn)
+                .where(Turn.session_id == session_id, Turn.question == question)
+                .order_by(Turn.seq.desc())
+                .limit(1)
+            )
+            .scalars()
+            .first()
+        )
+    return (row.insight_summary or "") if row is not None else ""
 
 
 def insert_eval_run(run: dict) -> None:

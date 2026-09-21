@@ -171,6 +171,22 @@ class QaCache(Base):
     created_at: Mapped[str | None] = mapped_column(Text, server_default=CREATED_AT)
 
 
+class Job(Base):
+    """后台作业（jobs，§4.4）：进度与结果落这一行；重启时未完成的会被标 interrupted。"""
+
+    __tablename__ = "jobs"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    kind: Mapped[str | None] = mapped_column(String)
+    payload_json: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str | None] = mapped_column(String)
+    progress: Mapped[float | None] = mapped_column()
+    result_json: Mapped[str | None] = mapped_column(Text)
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[str | None] = mapped_column(Text, server_default=CREATED_AT)
+    updated_at: Mapped[str | None] = mapped_column(Text, server_default=CREATED_AT)
+
+
 class EvalRun(Base):
     """每轮评测的结果（eval_runs，§4.4）：通过率、fidelity、降级率、成本与基线差值都落这一行。"""
 

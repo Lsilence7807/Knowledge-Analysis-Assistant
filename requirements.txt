@@ -34,6 +34,11 @@ langfuse           # why: 观测：模型与工具调用上报（没密钥时只
 deepeval           # why: 评测用例表示（EvaluationDataset/Golden）与 faithfulness 交叉校验 | 阶段 F8(P16)
 # 未装 ragas：0.4.3 在本机 import 就挂（langchain-community 已不带 chat_models.vertexai），
 # faithfulness / context 指标改由 deepeval 同名指标 + 本地确定性口径承担（见 K-047）
+huey               # why: 后台作业队列（sqlite 落 data/jobs.db，重启标 interrupted） | 阶段 F9(P18)
+APScheduler        # why: 定时维护（作业清理；P23 的数据源定时同步以后挂这里） | 阶段 F9(P18/P23)
+markitdown         # why: PDF/Word 轻量解析（默认解析后端，无模型下载） | 阶段 F9(P19)
+docling            # why: PDF/Word 重型解析（DOCS_BACKEND=docling 才走，首次运行会下模型） | 阶段 F9(P19)
+docxtpl            # why: Word 报告模板渲染（Jinja2 语法 + docx 模板） | 阶段 F9(P19)
 
 # --- 运行期：扩展阶段 ---
 mcp                # why: 官方 MCP 客户端 SDK | 阶段 P8
