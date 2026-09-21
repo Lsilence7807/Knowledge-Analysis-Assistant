@@ -14,9 +14,12 @@ RUN npm run build
 FROM python:3.12-slim AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 DATA_DIR=/app/data
 WORKDIR /app
-COPY requirements.lock ./
-# 锁文件是完整闭包：镜像里的依赖与 CI、本机 .venv 用的是同一份版本表
-RUN pip install --no-cache-dir -r requirements.lock
+COPY requirements.lock requirements-heavy.lock ./
+# 依赖分档（§10 FRAMEWORK_PROFILE，2026-09-22 拆档）：core 只装应用 + 轻解析后端，full 额外装 Docling 那一串（GB 级）
+ARG FRAMEWORK_PROFILE=core
+ENV FRAMEWORK_PROFILE=${FRAMEWORK_PROFILE}
+RUN pip install --no-cache-dir -r requirements.lock \
+    && if [ "$FRAMEWORK_PROFILE" = "full" ]; then pip install --no-cache-dir -r requirements-heavy.lock; fi
 COPY backend/ backend/
 COPY config/ config/
 COPY evals/ evals/

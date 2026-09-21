@@ -7,6 +7,9 @@ services:
     build:
       context: .
       dockerfile: deploy/Dockerfile
+      args:
+        # core（默认）：镜像小、起得快；要 Docling 重型解析：FRAMEWORK_PROFILE=full docker compose build
+        FRAMEWORK_PROFILE: ${FRAMEWORK_PROFILE:-core}
     image: datacopilot:local
     restart: unless-stopped
     environment:

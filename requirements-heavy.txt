@@ -1,0 +1,5 @@
+# 约束：新增依赖必须在行尾写 why 与所属阶段（见 AGENTS.md）；本文件只放「重型可选」依赖
+# 作用：FRAMEWORK_PROFILE=full 才装的重型件（§10）：目前只有 Docling 那一串（torch / transformers / opencv …）
+# 阶段：F9(P19) 引入，F10 拆档（2026-09-22）
+# 用法：pip install -r requirements.lock -r requirements-heavy.lock（core 档只装 requirements.lock）
+docling            # why: PDF/Word 重型解析（DOCS_BACKEND=docling 时生效，首次运行会下模型） | 阶段 F9(P19)

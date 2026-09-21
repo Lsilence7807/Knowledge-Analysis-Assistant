@@ -1,0 +1,46 @@
+# 文件：requirements-heavy.lock
+# 作用：重型可选依赖的锁（FRAMEWORK_PROFILE=full 的镜像才装）：Docling 那一串（torch / transformers / opencv …）
+# 阶段：F10 拆档（2026-09-22）；声明见 requirements-heavy.txt
+# 生成：与 requirements.lock 同一套口径——名字集合来自 pip 解析（core ∪ heavy）减 core 闭包，版本取本机 .venv
+# 用法：pip install -r requirements.lock -r requirements-heavy.lock（core 档只装前者；两者合起来才是完整环境）
+accelerate==1.15.0
+antlr4-python3-runtime==4.9.3
+colorlog==6.12.0
+dill==0.4.1
+doclang==0.7.3
+docling==2.129.0
+docling-core==2.97.2
+docling-ibm-models==4.0.3
+docling-parse==7.20.0
+docling-slim==2.129.0
+Faker==40.39.0
+jsonref==1.1.0
+langcodes==3.5.1
+latex2mathml==3.81.1
+mail-parser==4.6.5
+marko==2.2.4
+mpire==2.10.2
+multiprocess==0.70.19
+olefile==0.47
+omegaconf==2.3.1
+opencv-python==5.0.0.93
+polyfactory==3.3.0
+psutil==7.2.2
+pyclipper==1.4.0
+pylatexenc==2.11
+pypdfium2==5.13.0
+python-oxmsg==0.0.2
+rapidocr==3.9.2
+rtree==1.4.1
+safetensors==0.8.0
+scipy==1.18.1
+semchunk==3.2.5
+shapely==2.1.2
+torch==2.14.0
+torchvision==0.29.0
+transformers==5.17.0
+tree-sitter==0.26.0
+tree-sitter-c==0.24.2
+tree-sitter-javascript==0.25.0
+tree-sitter-python==0.25.0
+tree-sitter-typescript==0.23.2

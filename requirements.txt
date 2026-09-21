@@ -37,7 +37,8 @@ deepeval           # why: 评测用例表示（EvaluationDataset/Golden）与 fa
 huey               # why: 后台作业队列（sqlite 落 data/jobs.db，重启标 interrupted） | 阶段 F9(P18)
 APScheduler        # why: 定时维护（作业清理；P23 的数据源定时同步以后挂这里） | 阶段 F9(P18/P23)
 markitdown         # why: PDF/Word 轻量解析（默认解析后端，无模型下载） | 阶段 F9(P19)
-docling            # why: PDF/Word 重型解析（DOCS_BACKEND=docling 才走，首次运行会下模型） | 阶段 F9(P19)
+# 未装 docling：它是重型解析后端（拉 torch / transformers / opencv 那一串，GB 级），只进 FRAMEWORK_PROFILE=full 的镜像，
+# 声明见 requirements-heavy.txt；core 档用 markitdown + pypdf/python-docx，功能不缺口，只是版面理解差些
 docxtpl            # why: Word 报告模板渲染（Jinja2 语法 + docx 模板） | 阶段 F9(P19)
 
 # --- 运行期：扩展阶段 ---
