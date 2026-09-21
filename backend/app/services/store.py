@@ -8,12 +8,13 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete, func, select, text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core import config, db
-from app.models import AgentStep, CapabilityLog, Dataset, KbDoc, Skill, Task
+from app.models import AgentStep, CapabilityLog, Dataset, EvalRun, KbDoc, Skill, Task, TraceSpan
 
 logger = logging.getLogger(__name__)
 
@@ -252,3 +253,133 @@ def count_kb_chunks() -> int:
     ensure_tables()
     with db.session() as session:
         return int(session.execute(select(func.count()).select_from(KbDoc)).scalar_one())
+
+
+def insert_trace_span(
+    task_id: str,
+    name: str,
+    *,
+    model_id: str | None = None,
+    tokens_in: int = 0,
+    tokens_out: int = 0,
+    cost: float = 0.0,
+    ms: int = 0,
+    ok: bool = True,
+) -> None:
+    """记一条调用台账（F8）：一次模型或工具调用一行，成本与耗时都留在这里。"""
+    ensure_tables()
+    with db.session() as session:
+        session.add(
+            TraceSpan(
+                task_id=task_id,
+                name=name,
+                model_id=model_id,
+                tokens_in=tokens_in,
+                tokens_out=tokens_out,
+                cost=cost,
+                ms=ms,
+                ok=int(bool(ok)),
+            )
+        )
+        session.commit()
+
+
+def _span_row(row: TraceSpan) -> dict:
+    """ORM 行转字典：created_at 保持 SQLite 的字符串，前端与统计都按字符串切日期。"""
+    return {
+        "id": row.id,
+        "task_id": row.task_id,
+        "name": row.name,
+        "model_id": row.model_id,
+        "tokens_in": row.tokens_in or 0,
+        "tokens_out": row.tokens_out or 0,
+        "cost": row.cost or 0.0,
+        "ms": row.ms or 0,
+        "ok": bool(row.ok),
+        "created_at": row.created_at or "",
+    }
+
+
+def trace_spans(task_id: str) -> list[dict]:
+    """某个任务的调用明细（GET /trace/{task_id}），按发生顺序回。"""
+    with db.session() as session:
+        rows = session.execute(select(TraceSpan).where(TraceSpan.task_id == task_id).order_by(TraceSpan.id)).scalars()
+        return [_span_row(row) for row in rows]
+
+
+def trace_stats(days: int = 7) -> dict:
+    """最近 days 天的台账汇总：花了多少钱、慢在哪（GET /trace/stats 的数据源）。
+
+    created_at 是 SQLite 的 UTC 文本，时间下界也按 UTC 算，免得本机时区把当天的数据切掉。
+    """
+    since = (datetime.now(UTC) - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+    with db.session() as session:
+        rows = session.execute(select(TraceSpan).where(TraceSpan.created_at >= since)).scalars()
+        spans = [_span_row(row) for row in rows]
+
+    by_name: dict[str, dict] = {}
+    by_day: dict[str, float] = {}
+    for span in spans:
+        key = span["name"] or "-"
+        item = by_name.setdefault(key, {"name": key, "spans": 0, "cost": 0.0, "ms": 0})
+        item["spans"] += 1
+        item["cost"] += span["cost"]
+        item["ms"] += span["ms"]
+        day = (span["created_at"] or "")[:10]
+        by_day[day] = by_day.get(day, 0.0) + span["cost"]
+    for item in by_name.values():
+        item["cost"] = round(item["cost"], 6)
+        item["ms_avg"] = round(item["ms"] / item["spans"]) if item["spans"] else 0
+
+    slowest = sorted(spans, key=lambda item: item["ms"], reverse=True)[:5]
+    return {
+        "days": days,
+        "spans": len(spans),
+        "cost_total": round(sum(span["cost"] for span in spans), 6),
+        "tokens_in": sum(span["tokens_in"] for span in spans),
+        "tokens_out": sum(span["tokens_out"] for span in spans),
+        "by_name": sorted(by_name.values(), key=lambda item: item["cost"], reverse=True),
+        "by_day": [{"day": day, "cost": round(cost, 6)} for day, cost in sorted(by_day.items())],
+        "slowest": [
+            {"name": span["name"], "ms": span["ms"], "task_id": span["task_id"], "created_at": span["created_at"]}
+            for span in slowest
+        ],
+    }
+
+
+def insert_eval_run(run: dict) -> None:
+    """记一轮评测（F8）：指标与基线差值都落 eval_runs，前端与 /evals/report 从这里读。"""
+    ensure_tables()
+    with db.session() as session:
+        session.add(
+            EvalRun(
+                golden_path=run.get("golden_path"),
+                total=run.get("total"),
+                sql_pass_rate=run.get("sql_pass_rate"),
+                fidelity_rate=run.get("fidelity_rate"),
+                degrade_rate=run.get("degrade_rate"),
+                cost_total=run.get("cost_total"),
+                baseline_delta_json=json.dumps(run.get("baseline_delta") or {}, ensure_ascii=False),
+            )
+        )
+        session.commit()
+
+
+def list_eval_runs(limit: int = 10) -> list[dict]:
+    """最近的评测记录，新的在前。"""
+    with db.session() as session:
+        rows = session.execute(select(EvalRun).order_by(EvalRun.id.desc()).limit(limit)).scalars()
+        return [
+            {
+                "id": row.id,
+                "golden_path": row.golden_path,
+                "total": row.total,
+                "sql_pass_rate": row.sql_pass_rate,
+                "fidelity_rate": row.fidelity_rate,
+                "degrade_rate": row.degrade_rate,
+                "cost_total": row.cost_total,
+                "baseline_delta": json.loads(row.baseline_delta_json or "{}"),
+                "created_at": row.created_at,
+            }
+            for row in rows
+        ]

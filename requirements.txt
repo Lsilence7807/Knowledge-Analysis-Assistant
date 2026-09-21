@@ -30,6 +30,10 @@ slowapi            # why: 限流：每 IP 上限与登录失败限流 | 阶段 F
 sse-starlette      # why: SSE 分帧与断连处理（换掉手写拼帧） | 阶段 F7(P17)
 langchain-core     # why: 工具 schema 与 @tool（换掉手写 JSON Schema 字典） | 阶段 F7
 # 未装 langchain-mcp-adapters：它要求 mcp<2.0.0，与仓库要的 mcp==2.2.0 冲突（MCP 侧继续用官方 SDK，见 §11）
+langfuse           # why: 观测：模型与工具调用上报（没密钥时只用本地 trace_spans 表） | 阶段 F8(P16)
+deepeval           # why: 评测用例表示（EvaluationDataset/Golden）与 faithfulness 交叉校验 | 阶段 F8(P16)
+# 未装 ragas：0.4.3 在本机 import 就挂（langchain-community 已不带 chat_models.vertexai），
+# faithfulness / context 指标改由 deepeval 同名指标 + 本地确定性口径承担（见 K-047）
 
 # --- 运行期：扩展阶段 ---
 mcp                # why: 官方 MCP 客户端 SDK | 阶段 P8

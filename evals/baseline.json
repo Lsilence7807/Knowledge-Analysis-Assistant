@@ -1,0 +1,7 @@
+{
+  "sql_pass_rate": 0.8,
+  "fidelity_rate": 0.95,
+  "degrade_rate": 0.05,
+  "cost_per_task": 0.05,
+  "note": "阈值取自设计 §4.10；cost_per_task 是本机实测的一次问答成本上限（超了就是模型或提示词改坏了）"
+}

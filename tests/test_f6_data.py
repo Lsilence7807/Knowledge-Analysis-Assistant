@@ -1,6 +1,7 @@
 # 文件：tests/test_f6_data.py
 # 作用：F6 验收：Alembic 迁移建齐表、老库升级幂等、ORM 往返读写（datasets/tasks/turns/qa_cache）
 # 阶段：F6 数据层换 SQLAlchemy + Alembic + pydantic-settings
+#       F8 加 eval_runs（§4.4 的评测表，迁移 0002）后同步这张清单
 # 依赖：pytest、sqlite3、sqlalchemy、app.core.{config,db}、app.models、app.services.{store,memory,cache}
 from __future__ import annotations
 
@@ -14,11 +15,12 @@ from app.core import config, db
 from app.models import Base, Dataset, Task
 from app.services import cache, memory, store
 
-# 迁移后应有的表：§4.4 的 10 张业务表 + FTS5 虚表 + alembic 版本表
+# 迁移后应有的表：§4.4 的业务表（F8 起含 eval_runs）+ FTS5 虚表 + alembic 版本表
 EXPECTED_TABLES = {
     "agent_steps",
     "capability_log",
     "datasets",
+    "eval_runs",
     "kb_docs",
     "kb_fts",
     "qa_cache",

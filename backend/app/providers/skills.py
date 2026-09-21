@@ -10,7 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from app.core import config
+from app.core import config, guardrail
 from app.services import store
 
 ENABLED = os.getenv("ENABLE_SKILLS", "false").lower() == "true"
@@ -181,6 +181,8 @@ def use_skill(slug: str, args: list | None = None) -> dict:
         raise SkillError(f"SKILL.md 读不出来：{exc}") from exc
     if row["kind"] != "script":
         body = skill_body(text)
+        # K-031：技能正文进上下文前统一过注入防护（剥指令行 + 命中留痕），不再原样塞给模型
+        body = guardrail.guard(body, f"技能 {slug}")
         # 正文可能很长（实测有 2 万字符的），与脚本输出同一个上限：截断并标记，别让一次 use_skill 吃掉上下文
         kept = body[:MAX_OUTPUT_CHARS]
         return {

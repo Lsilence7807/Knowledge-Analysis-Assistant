@@ -10,13 +10,14 @@
 from __future__ import annotations
 
 import json
+import time
 
 from langchain_core.tools import tool as lc_tool
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.core import config, db
-from app.services import metrics, registry, store
+from app.services import metrics, registry, store, trace
 
 KINDS = ("read", "write")
 DEFAULT_SETTINGS: dict = {
@@ -98,12 +99,15 @@ def call(name: str, arguments: dict) -> dict:
     except ValidationError as exc:
         # 参数名或类型不对：让模型下一轮自己改，不当成系统故障
         raise ToolError(f"工具 {name} 参数不匹配：{_brief(exc)}") from exc
+    started = time.perf_counter()
     try:
-        return tool["fn"](**parsed.model_dump(), dataset_id=str(given.get("dataset_id") or ""))
-    except db.SQLRejected as exc:
-        raise ToolError(f"工具 {name} 执行失败：{exc}") from exc
+        result = tool["fn"](**parsed.model_dump(), dataset_id=str(given.get("dataset_id") or ""))
     except Exception as exc:
+        # SQL 被守卫拒绝与工具自身出错回给模型的话术一样（都是「这步失败，换个做法」），合并处理并留痕
+        trace.span("", f"tool.{name}", ms=trace.elapsed_ms(started), ok=False)
         raise ToolError(f"工具 {name} 执行失败：{exc}") from exc
+    trace.span("", f"tool.{name}", ms=trace.elapsed_ms(started))
+    return result
 
 
 # 入参模型：字段说明进 JSON Schema 给模型看，必填与类型由 pydantic 判

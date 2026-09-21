@@ -1,0 +1,3 @@
+{"id": "q001", "fixture": "examples/demo_sales.csv", "question": "各地区的销售额合计是多少", "expect_sql_contains": ["select", "地区", "销售额"], "expect_columns": ["地区"], "expect_insight_fields": ["summary"], "forbid_phrases": ["无法确定", "可能"]}
+{"id": "q002", "fixture": "examples/demo_sales.csv", "question": "各品类的订单数合计，按订单数从高到低排", "expect_sql_contains": ["select", "品类", "订单数"], "expect_columns": ["品类"], "expect_insight_fields": ["summary"], "forbid_phrases": ["无法确定"]}
+{"id": "q003", "fixture": "examples/demo_sales.csv", "question": "电商渠道的客单价平均值是多少", "expect_sql_contains": ["select", "渠道", "客单价"], "expect_columns": [], "expect_insight_fields": ["summary"], "forbid_phrases": ["无法确定"]}

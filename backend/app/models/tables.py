@@ -169,3 +169,19 @@ class QaCache(Base):
     hits: Mapped[int | None] = mapped_column(Integer, default=0)
     last_hit_at: Mapped[str | None] = mapped_column(Text, server_default=CREATED_AT)
     created_at: Mapped[str | None] = mapped_column(Text, server_default=CREATED_AT)
+
+
+class EvalRun(Base):
+    """每轮评测的结果（eval_runs，§4.4）：通过率、fidelity、降级率、成本与基线差值都落这一行。"""
+
+    __tablename__ = "eval_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    golden_path: Mapped[str | None] = mapped_column(String)
+    total: Mapped[int | None] = mapped_column(Integer)
+    sql_pass_rate: Mapped[float | None] = mapped_column()
+    fidelity_rate: Mapped[float | None] = mapped_column()
+    degrade_rate: Mapped[float | None] = mapped_column()
+    cost_total: Mapped[float | None] = mapped_column()
+    baseline_delta_json: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[str | None] = mapped_column(Text, server_default=CREATED_AT)

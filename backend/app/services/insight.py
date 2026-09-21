@@ -45,7 +45,7 @@ def summarize(question: str, result: dict, profile: dict, prior: list[str]) -> I
         raise InsightError(str(exc), "insight:llm") from exc
     except llm.LLMError as exc:  # chat_json 内部已按契约重试 1 次
         raise InsightError(str(exc), "insight:contract") from exc
-    invented = _unsupported_numbers(insight, result)
+    invented = unsupported_numbers(insight, result)
     if invented:
         insight.caveats = [
             *insight.caveats,
@@ -73,8 +73,10 @@ def _user_prompt(question: str, result: dict, profile: dict, prior: list[str]) -
     return "\n".join(lines)
 
 
-def _unsupported_numbers(insight: Insight, result: dict) -> list[str]:
+def unsupported_numbers(insight: Insight, result: dict) -> list[str]:
     """结论里出现、又追溯不到结果表的数字；设计硬规则要求这类数字必须写进 caveats。
+
+    F8 起改成公开函数：评测 harness 的 fidelity_rate 与 P4 的 caveats 必须是同一份判定。
 
     K-009：findings 逐条都给出行号时，整段结论视为已追溯（合计、环比这类算式结果表里本来就没有原文）。
     K-018：兜底的字面比对先把标识符剔掉，表名 `ds_<id>`、列名里的数字不算可疑数字。

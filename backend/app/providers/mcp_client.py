@@ -12,8 +12,7 @@ import sys
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from app.core import config
-from app.providers.kb import strip_instructions
+from app.core import config, guardrail
 from app.services import store
 
 ENABLED = os.getenv("ENABLE_MCP", "false").lower() == "true"
@@ -145,7 +144,7 @@ def call_tool(tool: str = "", arguments: dict | None = None) -> dict:
     result = _run(work)
     if getattr(result, "is_error", False):
         raise McpError(f"MCP 工具 {name} 执行失败：{_text(result)[:200]}")
-    body = strip_instructions(_text(result))
+    body = guardrail.guard(_text(result), f"MCP 工具 {name}")
     return {
         "tool": name,
         "truncated": len(body) > MAX_RESULT_CHARS,

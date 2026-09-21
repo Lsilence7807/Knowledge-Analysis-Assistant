@@ -5,15 +5,18 @@
 from __future__ import annotations
 
 import json
+import time
 
-from app.core import config
-from app.services import llm_models
+from app.core import config, guardrail
+from app.services import llm_models, trace
 
 RETRY = 1  # 输出不合契约时的重试次数，第二次仍不合契约就降级
 MAX_TEXT = 500  # 模型原文进报错与日志前的截断长度
 
 _router = None  # LiteLLM Router 缓存：配置变了按指纹重建（见 _get_router）
 _router_key = ""
+
+guardrail.install()  # §7：请求进模型前统一过一遍注入防护（本地扫描 + LiteLLM guardrail hook）
 
 
 class LLMUnavailable(RuntimeError):
@@ -83,22 +86,45 @@ def embed(texts: list[str]) -> list[list[float]]:
     }
     if profile.get("base_url"):
         params["api_base"] = profile["base_url"]
+    started = time.perf_counter()
     try:
         response = litellm.embedding(**params)
     except Exception as exc:  # 网络、鉴权、模型名不对一律当这一层不可用
+        trace.record("", "llm.embed", model_id=profile.get("id"), ms=trace.elapsed_ms(started), ok=False)
         raise LLMError(f"embedding 调用失败：{_clip(exc)}") from exc
+    tokens_in, _, cost = trace.usage_of(response)
+    trace.record(
+        "", "llm.embed", model_id=profile.get("id"), tokens_in=tokens_in, cost=cost, ms=trace.elapsed_ms(started)
+    )
     return [list(item["embedding"]) for item in response.data]
 
 
 def _complete(messages: list[dict], model: dict) -> str:
     """取原始文本的唯一网络出口；测试直接替换它（保持两参签名）。"""
+    started = time.perf_counter()
     if config.LLM_BACKEND == "direct":
-        return _direct_complete(messages, model)
-    response = _get_router().completion(
-        model=_group_name(model),
-        messages=messages,
-        response_format={"type": "json_object"},
-        num_retries=0,  # 重试策略由 chat_json 统一管，这里不叠一层
+        text = _direct_complete(messages, model)
+        trace.record("", "llm.complete", model_id=model.get("id"), ms=trace.elapsed_ms(started))
+        return text
+    try:
+        response = _get_router().completion(
+            model=_group_name(model),
+            messages=messages,
+            response_format={"type": "json_object"},
+            num_retries=0,  # 重试策略由 chat_json 统一管，这里不叠一层
+        )
+    except Exception:
+        trace.record("", "llm.complete", model_id=model.get("id"), ms=trace.elapsed_ms(started), ok=False)
+        raise
+    tokens_in, tokens_out, cost = trace.usage_of(response)
+    trace.record(
+        "",
+        "llm.complete",
+        model_id=model.get("id"),
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        cost=cost,
+        ms=trace.elapsed_ms(started),
     )
     return response.choices[0].message.content or ""
 
@@ -109,6 +135,7 @@ def chat_tools(messages: list[dict], tools: list[dict], model_id: str | None = N
     arguments 已解析成 dict；模型给的不是合法 JSON 时当空参处理，由工具层报「参数不匹配」让它改。
     """
     model = ensure_ready(model_id)
+    started = time.perf_counter()
     if config.LLM_BACKEND == "direct":
         message = (
             _client(model)
@@ -116,13 +143,26 @@ def chat_tools(messages: list[dict], tools: list[dict], model_id: str | None = N
             .choices[0]
             .message
         )
+        trace.record("", "llm.tools", model_id=model.get("id"), ms=trace.elapsed_ms(started))
     else:
-        message = (
-            _get_router()
-            .completion(model=_group_name(model), messages=messages, tools=tools, tool_choice="auto", num_retries=0)
-            .choices[0]
-            .message
+        try:
+            response = _get_router().completion(
+                model=_group_name(model), messages=messages, tools=tools, tool_choice="auto", num_retries=0
+            )
+        except Exception:
+            trace.record("", "llm.tools", model_id=model.get("id"), ms=trace.elapsed_ms(started), ok=False)
+            raise
+        tokens_in, tokens_out, cost = trace.usage_of(response)
+        trace.record(
+            "",
+            "llm.tools",
+            model_id=model.get("id"),
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            cost=cost,
+            ms=trace.elapsed_ms(started),
         )
+        message = response.choices[0].message
     calls: list[dict] = []
     for call in message.tool_calls or []:
         try:
@@ -145,6 +185,7 @@ async def stream_text(system: str, user: str, model_id: str | None = None):
     流式必须用异步客户端：断连时 Starlette 取消协程能真把上游请求掐掉。
     """
     model = ensure_ready(model_id)
+    started = time.perf_counter()
     messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
     try:
         if config.LLM_BACKEND == "direct":
@@ -160,7 +201,10 @@ async def stream_text(system: str, user: str, model_id: str | None = None):
             if piece:
                 yield piece
     except Exception as exc:  # 网络、鉴权、限流一律降级，与 chat_json 同口径
+        trace.record("", "llm.stream", model_id=model.get("id"), ms=trace.elapsed_ms(started), ok=False)
         raise LLMError(f"模型调用失败：{_clip(exc)}") from exc
+    # 流式片段里拿不到完整用量，这里只记耗时；成本由非流式的 llm.complete / llm.tools 记账
+    trace.record("", "llm.stream", model_id=model.get("id"), ms=trace.elapsed_ms(started))
 
 
 def _get_router():

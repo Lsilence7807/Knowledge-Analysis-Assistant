@@ -3,6 +3,7 @@
 # 阶段：P0 骨架与契约冻结（P3 加密钥来源，P5 加密钥写入；P21 加并发与压测路径；F1 搬到 core/config.py）
 #       F6 环境变量交 pydantic-settings（BaseSettings），模块级常量名一个没改，测试仍 monkeypatch 这里
 #       F7 加认证（ENABLE_AUTH / AUTH_DISABLED / APP_PASSWORD_HASH）与跨域白名单（CORS_ORIGINS）
+#       F8 加观测与评测（LANGFUSE_* 开关与密钥、EVAL_GOLDEN / EVAL_BASELINE）
 # 依赖：pydantic-settings、标准库 json、pathlib；本文件是仓库根 BASE_DIR 的唯一锚点，其它模块不许自己拼路径
 from __future__ import annotations
 
@@ -37,6 +38,13 @@ class Settings(BaseSettings):
     AUTH_DISABLED: bool = False
     APP_PASSWORD_HASH: str = ""
     CORS_ORIGINS: str = ""
+    # F8 观测与评测：Langfuse 没密钥时只用本地 trace_spans 表；评测集与基线路径可覆盖
+    LANGFUSE_ENABLED: bool = False
+    LANGFUSE_PUBLIC_KEY: str = ""
+    LANGFUSE_SECRET_KEY: str = ""
+    LANGFUSE_HOST: str = "https://cloud.langfuse.com"
+    EVAL_GOLDEN: Path | None = None
+    EVAL_BASELINE: Path | None = None
 
 
 _settings = Settings()
@@ -64,6 +72,14 @@ AUTH_DISABLED = _settings.AUTH_DISABLED
 APP_PASSWORD_HASH = _settings.APP_PASSWORD_HASH
 # 跨域白名单（逗号分隔）：默认空＝同源部署（前端由后端一起服务）不需要 CORS
 CORS_ORIGINS = _settings.CORS_ORIGINS
+
+# F8：观测（Langfuse 为主、本地表保底）与评测（golden 集 + 基线）
+LANGFUSE_ENABLED = _settings.LANGFUSE_ENABLED
+LANGFUSE_PUBLIC_KEY = _settings.LANGFUSE_PUBLIC_KEY
+LANGFUSE_SECRET_KEY = _settings.LANGFUSE_SECRET_KEY
+LANGFUSE_HOST = _settings.LANGFUSE_HOST
+EVAL_GOLDEN = Path(_settings.EVAL_GOLDEN) if _settings.EVAL_GOLDEN else BASE_DIR / "evals" / "golden.jsonl"
+EVAL_BASELINE = Path(_settings.EVAL_BASELINE) if _settings.EVAL_BASELINE else BASE_DIR / "evals" / "baseline.json"
 
 LLM_API_KEY = _settings.LLM_API_KEY
 # 模型层后端：litellm（默认）或 direct（原 OpenAI 单厂商客户端，LiteLLM 出问题时一键回落）
