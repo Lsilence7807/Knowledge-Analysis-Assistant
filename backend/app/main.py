@@ -51,7 +51,17 @@ BUILD_HINT = (
 
 def create_app() -> FastAPI:
     """装配应用：API 路由先挂，前端产物垫底，最后兜 SPA 回退。"""
-    application = FastAPI(title="Knowledge Analysis Assistant", version="0.1.0", lifespan=lifespan)
+    # 开认证时关掉框架自带的 schema 与 Swagger：这三条路由挂在 app 上，
+    # 不吃 api_router 的认证依赖（§4.3 只放行四项，其余一律要 cookie）
+    schema_on = not security.auth_enabled()
+    application = FastAPI(
+        title="Knowledge Analysis Assistant",
+        version="0.1.0",
+        openapi_url="/openapi.json" if schema_on else None,
+        docs_url="/docs" if schema_on else None,
+        redoc_url="/redoc" if schema_on else None,
+        lifespan=lifespan,
+    )
     # slowapi 的规矩：限流器与 429 处理器挂到 app 上；中间件只在公开端装（本地自用没必要给自己添 429）
     application.state.limiter = security.limiter
     application.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)

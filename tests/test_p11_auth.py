@@ -188,3 +188,14 @@ def test_startup_refuses_when_password_is_missing(monkeypatch, tmp_path):
 def test_login_without_configured_password_is_503(client, monkeypatch):
     monkeypatch.setattr(config, "APP_PASSWORD_HASH", "")
     assert _login(client).status_code == 503
+
+
+def test_framework_schema_routes_are_closed_when_auth_is_on(client):
+    """开认证时 /openapi.json、/docs、/redoc 不再往外发 schema（它们直挂 app，绕开 api_router 的认证依赖）。
+
+    §4.3 只放行 /health、/capabilities、/login、/logout：这三条被 SPA 兜底接住（HTML）或 503 都算关掉，
+    只要不是「没有 cookie 也能拿到一坨 JSON schema」。
+    """
+    for path in ("/openapi.json", "/docs", "/redoc"):
+        response = client.get(path)
+        assert not response.headers.get("content-type", "").startswith("application/json"), path
