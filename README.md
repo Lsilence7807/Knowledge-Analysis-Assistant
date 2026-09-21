@@ -8,7 +8,7 @@
 ![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
 ![DuckDB](https://img.shields.io/badge/DuckDB-FFF000?logo=duckdb&logoColor=black)
-![tests](https://img.shields.io/badge/tests-164%20passed-brightgreen)
+![tests](https://img.shields.io/badge/tests-245%20passed-brightgreen)
 ![ruff](https://img.shields.io/badge/code%20style-ruff-000000)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
@@ -83,7 +83,7 @@
 
 ## 🏗️ 架构
 
-（下图是 v3.1 骨架整改后的**目标形态**；当前代码仍是平铺 `app/` + 单页 `web/index.html`，F1/F2/F10 落地后对齐，见 `docs/代码台账.md` K-039）
+（v3.1 骨架整改后的形态；F1/F2/F10 已于 2026-09-21/22 落地，图与代码一致）
 
 ```mermaid
 flowchart LR
@@ -116,7 +116,7 @@ cd frontend; npm ci; npm run build; cd ..
 # 模型：在页面上填任意 OpenAI 兼容厂商的 base_url + 模型名 + 密钥（写本机 config/local.json，不进仓库）
 ```
 
-质量门与验收（已完成阶段：MVP 七段 + P6 技能 + P7 知识库 + P8 MCP + P13 Agent + P15 沙箱与指标 + P17 流式 + P21 性能契约，快照 164 passed；与 `.github/workflows/ci.yml` 同口径。测试必须在真实文件系统里跑，沙箱内 `tmp_path` 不可写，见 `docs/代码台账.md` 的 K-017）：
+质量门与验收（已完成阶段：MVP 七段 + P6 技能 + P7 知识库 + P8 MCP + P13 Agent + P15 沙箱与指标 + P17 流式 + P21 性能契约，快照 245 passed / 7 skipped；与 `.github/workflows/ci.yml` 同口径。测试必须在真实文件系统与正常权限下跑，受限沙箱里 `tmp_path` 不可写）：
 
 ```
 python -m ruff check backend/app tests
@@ -128,7 +128,7 @@ cd frontend; npm run lint; npx tsc --noEmit; npm run build
 ## 📁 项目结构
 
 ```
-（v3.1 目标结构；当前 `app/` 平铺在仓库根、前端是 `web/index.html` 单页）
+（v3.1 结构；F1/F2/F10 已落地，与代码一致）
 
 ```
 backend/app/    后端：api/routes 端点 · api/deps 依赖注入 · core 配置与守卫 · models ORM · schemas 边界模型 · services 业务（LangGraph 编排 / LiteLLM 模型层 / 检索 / 沙箱 / 报告）
@@ -137,7 +137,7 @@ frontend/       前端源码（React + Vite + TS + shadcn/ui），构建产物�
 web/dist/       前端构建产物（gitignore，服务从这里挂静态文件）
 config/         工具、指标口径、模型、MCP 配置（local.json 存本机密钥，不进仓库）
 skills/         示例技能包
-tests/          每个阶段一个测试文件（共 164 例，留在仓库根，验收命令不变）
+tests/          每个阶段一个测试文件（共 252 例 = 245 自动 + 7 浏览器验收，浏览器默认跳过，见 `docs/问题总表.md` §3.3）
 bench/          性能基线脚本与基线 JSON
 examples/       演示数据
 deploy/         多阶段镜像与 Caddy 反代 · docker-compose.yml 编排
@@ -193,19 +193,16 @@ docs/           设计文档、台账、索引
 
 **已实现**：MVP 七段（P0–P5）+ P6 技能 + P7 知识库 + P8 MCP + P13 Agent + P15 沙箱与指标 + P17 流式 + P21 性能并发契约。
 
-**骨架整改（先做）**：后端按 FastAPI 官方模板的目录与依赖注入重排（`api/routes` + `api/deps.py` + `core` + `models` + `schemas` + `services` + Alembic），前端换成 React + Vite + shadcn/ui 骨架（聊天壳用 assistant-ui，流式与工具调用用现成组件，API 客户端由 `/openapi.json` 生成），部署补上多阶段镜像与 compose；验收命令与 164 例断言都不动。逐段范围见 `docs/系统总体设计.md` §5 的 F1 / F2 / F10。
+**骨架整改（F1 / F2 / F10，已完成）**：后端按 FastAPI 官方模板的目录与依赖注入重排（`api/routes` + `api/deps.py` + `core` + `models` + `schemas` + `services` + Alembic），前端换成 React + Vite + shadcn/ui 骨架（聊天壳用 assistant-ui，流式与工具调用用现成组件，API 客户端由 `/openapi.json` 生成），部署补上多阶段镜像与 compose；`/openapi.json` 与当时的 164 例断言一个没动。逐段范围见 `docs/系统总体设计.md` §5 的 F1 / F2 / F10。
 
-**框架化改造（进行中，先做）**：把自研实现换成现成框架，接口与验收命令不变——`LiteLLM`（模型层）→ `LangGraph`（Agent 与记忆）→ `LlamaIndex + LanceDB`（检索与向量）→ `SQLAlchemy + Alembic + pydantic-settings`（数据层）→ `sqlglot + RestrictedPython + itsdangerous`（守卫与认证）→ `Langfuse + deepeval`（观测与评测）→ `huey + Docling`（作业与文档）。逐段范围与验收见 `docs/系统总体设计.md` §5「框架化改造（F 段）」，模块映射见同文 §11。
+**框架化改造（F1~F10 十段全部完成，2026-09-22）**：自研实现已换成现成框架，接口与验收命令不变——`LiteLLM`（模型层）→ `LangGraph`（Agent 与记忆）→ `LlamaIndex + LanceDB`（检索与向量）→ `SQLAlchemy + Alembic + pydantic-settings`（数据层）→ `sqlglot + RestrictedPython + itsdangerous`（守卫与认证）→ `Langfuse + deepeval`（观测与评测）→ `huey + Docling`（作业与文档）。逐段范围与验收见 `docs/系统总体设计.md` §5「框架化改造（F 段）」，模块映射见同文 §11；逐条问题、上限与坑见 `docs/问题总表.md`。
 
 **未开工**（设计已定，按 `docs/系统总体设计.md` §5 施工）：
 
-- P9 多模型适配器 · 按用途分级 · 失败回退
-- P10 会话记忆与问答复用缓存
-- P11 容器化公网部署（反向代理 + 单密码登录 + 限流）
-- P14 语义检索与重排
-- P16 评测集 · 忠实度 · 成本看板
-- P18 后台作业 · P19 报告导出（Word / PPT）
-- P22 多表关系推断 · P23 企业数据源只读同步 · P24 反馈与配额
+- P20 日常使用功能（收藏问题 · 数据集重导入与 schema drift 报告）
+- P22 多表关系推断与 join 校验 · P23 企业数据源只读同步 · P24 反馈与配额
+
+P9 多模型 / P10 记忆 / P11 部署与登录 / P14 语义检索 / P16 评测 / P18 作业 / P19 报告导出已随 F 段落地（F3 / F4 / F7 / F5 / F8 / F9），逐段验收见 `docs/系统测试清单.md`。
 
 **明确不做**：模型微调 / 自训练、K8s 与多租户 RBAC、自研向量检索引擎与 embedding、自研 agent 循环 / 评测 / 观测框架（这三类直接用 LangGraph / deepeval / Langfuse）、扫描件 OCR、移动端适配。
 
