@@ -92,12 +92,12 @@ import builtins
 import operator
 import sys
 import traceback
+import types
 
 import numpy as np
 import pandas as pd
 from RestrictedPython import PrintCollector, compile_restricted, safe_builtins
 from RestrictedPython.Guards import (
-    full_write_guard,
     guarded_iter_unpack_sequence,
     guarded_unpack_sequence,
     safer_getattr,
@@ -133,6 +133,37 @@ def _inplacevar_(op, left, right):
     return INPLACE[op](left, right)
 
 
+class _WriteWrapper:
+    # RestrictedPython 自带的写守卫要求对象自带 __guarded_setitem__（Zope 那套对象级 ACL 才有），
+    # 于是 df['新列'] = ... / del df['列'] 这种最常用的 pandas 写法会被拒成英文
+    # TypeError: object does not support item or slice assignment（F7 换守卫时丢了这个能力）。
+    # 沙箱的安全边界是「子进程 + import 白名单 + 拿不到文件/网络/密钥」，不是对象级 ACL：
+    # 这里显式放行内存写，只禁止改函数、方法、类、模块（防改框架对象与共享状态）。
+
+    __slots__ = ("ob",)
+
+    def __init__(self, ob):
+        object.__setattr__(self, "ob", ob)
+
+    def __setitem__(self, index, value):
+        self.ob[index] = value
+
+    def __delitem__(self, index):
+        del self.ob[index]
+
+    def __setattr__(self, name, value):
+        setattr(self.ob, name, value)
+
+    def __delattr__(self, name):
+        delattr(self.ob, name)
+
+
+def _write_guard(ob):
+    if isinstance(ob, (types.FunctionType, types.MethodType, type, types.ModuleType)):
+        raise TypeError("沙箱不允许给函数、方法、类或模块赋值")
+    return _WriteWrapper(ob)
+
+
 safe = {**safe_builtins, **{name: getattr(builtins, name) for name in EXTRA if hasattr(builtins, name)}}
 safe["__import__"] = _guard_import
 
@@ -143,7 +174,7 @@ namespace = {
     # RestrictedPython 的守卫插口：属性、下标、赋值、迭代、解包与类定义各挂一个
     "_getattr_": safer_getattr,
     "_getitem_": operator.getitem,
-    "_write_": full_write_guard,
+    "_write_": _write_guard,
     "_getiter_": iter,
     "_print_": PrintCollector,
     "_unpack_sequence_": guarded_unpack_sequence,

@@ -1,7 +1,7 @@
 # 文件：tests/test_p15_sandbox.py
 # 作用：P15 验收测试：沙箱里跑通自定义计算（注入数据集只读副本）、输出截断、工作目录清理、指标别名解析与未定义标注；
 #       反例：import os、写文件、联网、fork 子进程、双下划线逃逸、死循环超时、巨量输出、内存爆炸、语法错、
-#       空代码、数据集不存在、开关关闭降级、白名单外直调（K-023 口径）
+#       空代码、数据集不存在、开关关闭降级、白名单外直调（K-023 口径）、给模块挂属性（K-051 口径）
 # 阶段：P15 沙箱代码执行与指标语义层
 # 依赖：json、time、contextlib、pytest、pandas、fastapi.testclient、backend/app/core/config.py、
 #       backend/app/core/db.py、backend/app/main.py、backend/app/services/metrics.py、
@@ -116,8 +116,29 @@ def test_workdir_is_cleaned_up_after_run(client, tmp_path):
 
 def test_dataset_copy_is_a_read_only_snapshot(client):
     _make_dataset()
-    _run(client, 'df.loc[0, "amount"] = 9999\nresult = df.amount.sum()', dataset_id="d_test")
+    body = _run(client, 'df.loc[0, "amount"] = 9999\nresult = df.amount.sum()', dataset_id="d_test").json()
+    # 副本在沙箱里确实被改了（一行的 10 变成 9999），源表一动不动——这才是「只读副本」的意思
+    assert body["ok"] is True, body.get("error") or body.get("stderr")
+    assert str(SUM_AMOUNT - 10 + 9999) in body["output"]
     assert db.exec_sql("SELECT sum(amount) AS total FROM ds_d_test")["rows"][0][0] == SUM_AMOUNT
+
+
+def test_dataframe_item_assignment_is_allowed(client):
+    """df["新列"] = ... 是数据计算里最常用的写法：F7 换 RestrictedPython 守卫时被误拦成
+
+    `TypeError: object does not support item or slice assignment`（K-051），这里钉住它必须能跑。
+    """
+    _make_dataset()
+    body = _run(client, 'df["毛利"] = df.amount * 0.3\nresult = int((df["毛利"]).sum())', dataset_id="d_test").json()
+    assert body["ok"] is True, body.get("error") or body.get("stderr")
+    assert str(int(SUM_AMOUNT * 0.3)) in body["output"]
+
+
+def test_module_assignment_is_still_rejected(client):
+    """放行内存写不等于放开一切：给模块（pd）挂属性仍要被拒，且给中文原因。"""
+    body = _run(client, "pd.foo = 1\nresult = 1").json()
+    assert body["ok"] is False
+    assert "不允许给函数、方法、类或模块赋值" in body["stderr"]
 
 
 def test_syntax_error_and_empty_code_are_rejected(client):
