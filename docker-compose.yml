@@ -1,0 +1,44 @@
+# 文件：docker-compose.yml
+# 作用：一键起应用与反代：数据与配置挂卷、健康检查、SSE 直通（Caddyfile 里关缓冲）
+# 阶段：F10 部署骨架
+# 用法：docker compose up --build → http://localhost/health 200，页面可用
+services:
+  app:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    image: datacopilot:local
+    restart: unless-stopped
+    environment:
+      DATA_DIR: /app/data
+      # 启动即迁移到最新 schema（§10）
+      ALEMBIC_APPLY_ON_START: "true"
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/health').read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

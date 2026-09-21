@@ -1,0 +1,12 @@
+# 文件：deploy/Caddyfile
+# 作用：反向代理：把域名/端口上的请求转给应用容器，顺带关掉代理缓冲（SSE 要逐帧到浏览器）
+# 阶段：F10 部署骨架
+# 本地：docker compose up 后用 http://localhost 访问
+# 公网：把 :80 换成你的域名，Caddy 自动申请证书（需要 80/443 可达）
+:80 {
+	encode zstd gzip
+	reverse_proxy app:8000 {
+		# flush_interval -1：不缓冲响应，/ask/stream 的帧才能实时到达
+		flush_interval -1
+	}
+}

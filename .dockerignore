@@ -1,0 +1,18 @@
+# 文件：.dockerignore
+# 作用：构建上下文瘦身：本机环境、数据与密钥、构建产物都不进镜像上下文
+# 阶段：F10 部署骨架
+.venv/
+.venv*/
+__pycache__/
+*.pyc
+data/
+web/dist/
+frontend/node_modules/
+node_modules/
+config/local.json
+.git/
+.github/
+docs/images/
+tests/
+bench/
+启动.cmd

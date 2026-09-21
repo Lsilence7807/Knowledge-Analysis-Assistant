@@ -1,5 +1,6 @@
 # 文件：.github/workflows/ci.yml
-# 作用：push / PR 时在 GitHub runner 上跑质量门与全量验收（锁版本装依赖 → ruff → pytest）
+# 作用：push / PR 时在 GitHub runner 上跑质量门：后端作业（锁版本装依赖 → ruff → pytest）、
+#       前端作业（npm ci → eslint → tsc -b && vite build）
 # 阶段：P0 起（2026-09-20 首版）
 # 依赖：requirements.lock（锁版本装依赖；requirements.txt 只是带 why 的声明表）
 name: CI
@@ -22,3 +23,22 @@ jobs:
         run: ruff format --check backend/app tests
       - name: 验收测试
         run: pytest tests -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: 装依赖（锁版本）
+        run: npm ci
+      - name: eslint
+        run: npm run lint
+      - name: 类型检查与构建
+        run: npm run build

@@ -1,0 +1,27 @@
+# 文件：.pre-commit-config.yaml
+# 作用：提交前的本地质量门：后端 ruff（与 CI、pyproject.toml 同一套配置）、前端 eslint 与类型检查
+# 阶段：F10 部署骨架；用法：pip install pre-commit && pre-commit install
+# 注意：前端没有装 prettier（F2 起只有 eslint），所以这里只跑 eslint + tsc，别照抄别处的 prettier 钩子
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.8
+    hooks:
+      - id: ruff
+        args: [--fix]
+        files: ^(backend/app|tests)/
+      - id: ruff-format
+        files: ^(backend/app|tests)/
+  - repo: local
+    hooks:
+      - id: frontend-lint
+        name: 前端 lint（eslint）
+        entry: npm --prefix frontend run lint
+        language: system
+        files: ^frontend/
+        pass_filenames: false
+      - id: frontend-build
+        name: 前端类型检查与构建（tsc -b && vite build）
+        entry: npm --prefix frontend run build
+        language: system
+        files: ^frontend/
+        pass_filenames: false
