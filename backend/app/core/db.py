@@ -2,7 +2,8 @@
 # 作用：数据层的唯一出口：SQLAlchemy 引擎/会话（元数据库）与 DuckDB（登记数据集表、执行查询 SQL、统计）
 # 阶段：P0 骨架与契约冻结（守卫、超时、行数上限与统计在 P2 补全；后补 drop_table、K-002、K-006）
 #       F6 数据层换 SQLAlchemy + Alembic（引擎/会话/迁移入口加在这里，函数签名不变）
-# 依赖：duckdb、pandas、sqlalchemy、threading、backend/app/core/config.py、backend/app/core/exec.py
+#       F7 SQL 守卫换 sqlglot 解析树（K-002/K-011；正则只留作解析失败时的兜底）
+# 依赖：duckdb、pandas、sqlalchemy、sqlglot、threading、backend/app/core/config.py、backend/app/core/exec.py
 from __future__ import annotations
 
 import threading
@@ -11,8 +12,11 @@ from contextlib import contextmanager
 
 import duckdb
 import pandas as pd
+import sqlglot
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
+from sqlglot import exp
+from sqlglot.tokens import TokenType
 
 from app.core import config
 from app.core.exec import run_blocking
@@ -70,10 +74,12 @@ def table_name(dataset_id: str) -> str:
 
 
 def connect(read_only: bool = True) -> duckdb.DuckDBPyConnection:
-    """打开 DuckDB 连接，默认只读。"""
+    """打开 DuckDB 连接，默认只读；只读连接顺手关掉外部文件访问（K-011：读文件、ATTACH 这类绕道一起挡）。"""
     config.ensure_dirs()
     if read_only and config.DUCKDB_PATH.exists():
-        return duckdb.connect(str(config.DUCKDB_PATH), read_only=True)
+        conn = duckdb.connect(str(config.DUCKDB_PATH), read_only=True)
+        conn.execute("SET enable_external_access=false")
+        return conn
     return duckdb.connect(str(config.DUCKDB_PATH))
 
 
@@ -157,11 +163,76 @@ def _mask_literals(text: str) -> str:
     return "".join(chars)
 
 
+READ_ONLY_ROOTS = (exp.Select, exp.Union, exp.Except, exp.Intersect, exp.Values, exp.Subquery, exp.Paren)
+# 写与 DDL：藏在 CTE 或子查询里也算写（`WITH x AS (DELETE ...) SELECT 1`），所以按节点类型全树扫
+WRITE_NODES = (
+    exp.Insert,
+    exp.Update,
+    exp.Delete,
+    exp.Merge,
+    exp.Create,
+    exp.Drop,
+    exp.Alter,
+    exp.TruncateTable,
+    exp.Attach,
+    exp.Detach,
+    exp.Copy,
+    exp.Export,
+    exp.Grant,
+    exp.Pragma,
+    exp.Set,
+    exp.Use,
+    exp.Execute,
+    exp.Transaction,
+    exp.Commit,
+    exp.Rollback,
+    exp.Show,
+    exp.Command,
+)
+
+
 def _guard(sql: str) -> str:
-    """校验 SQL 只含单条只读 SELECT；解析用 DuckDB 自己的解析器，避免正则漏判。"""
+    """校验 SQL 只含单条只读 SELECT：先走 sqlglot 解析树，解析器不认的语法再落到 DuckDB 自己的解析器。"""
     text = (sql or "").strip()
     if not text:
         raise SQLRejected("SQL 不能为空")
+    try:
+        return _guard_tree(text)
+    except SQLRejected:
+        raise
+    except Exception:  # noqa: BLE001  sqlglot 认不出的 DuckDB 方言：交给兜底，不因此放开限制
+        return _guard_by_duckdb(text)
+
+
+def _guard_tree(text: str) -> str:
+    """解析树判定（§7 v3.0 落点）：单条 SELECT、无 DDL/DML、无注释与分号、只碰数据集表。"""
+    tokens = sqlglot.tokenize(text, dialect="duckdb")
+    if not tokens:
+        raise SQLRejected("SQL 不能为空")
+    # 注释能藏起第二条语句，整条拒掉比逐段识别注释边界更不容易漏；sqlglot 把注释挂在相邻 token 上，
+    # 而字符串字面量里的 '--'、'/*' 不是注释 token（K-002），所以只看有没有挂注释、不看内容
+    if any(token.comments for token in tokens):
+        raise SQLRejected("SQL 里不允许写注释")
+    # 分号只判 token：字面量里的 'a;b' 是同一个 STRING token，不会被误伤（K-002）
+    if any(token.token_type == TokenType.SEMICOLON for token in tokens):
+        raise SQLRejected("只允许单条 SELECT，不要写分号")
+    statements = [item for item in sqlglot.parse(text, read="duckdb") if item is not None]
+    if len(statements) != 1:
+        raise SQLRejected("只允许单条 SELECT")
+    tree = statements[0]
+    if not isinstance(tree, READ_ONLY_ROOTS) or next(iter(tree.find_all(*WRITE_NODES)), None) is not None:
+        raise SQLRejected("只允许 SELECT 查询，不允许建表、写入或删除")
+    for table in tree.find_all(exp.Table):
+        name = table.name or ""
+        # 带库名前缀的（information_schema.* 这类系统表、别的 ATTACH 库）与表函数（read_csv_auto 这类读文件的）
+        # 都挡在开跑之前；库内的普通表（数据集表、CTE 名、自己的临时表）照常放行
+        if table.db or table.catalog or not name or not isinstance(table.this, (exp.Identifier, str)):
+            raise SQLRejected("只允许查询库内的表：不能带库名前缀，也不能调用读文件的表函数")
+    return text
+
+
+def _guard_by_duckdb(text: str) -> str:
+    """兜底守卫（sqlglot 解析不了时用）：正则掩掉字面量后判注释与分号，再交 DuckDB 解析器判语句类型。"""
     # 注释能藏起第二条语句，整条拒掉比逐段识别注释边界更不容易漏；
     # 但只在代码部分判：字面量里的 'a;b'、'--'、'/*' 是正常数据（K-002），引号未闭合由解析器兜底拒掉
     code = _mask_literals(text)

@@ -1,6 +1,6 @@
 # 文件：backend/app/services/ingest.py
 # 作用：把上传的 CSV/XLSX 清洗后落成 DuckDB 数据集，并生成数据画像
-# 阶段：P1 数据摄入
+# 阶段：P1 数据摄入；F7 落库时记归属（owner，§7 的数据归属口径）
 # 依赖：pandas、charset-normalizer、backend/app/core/db.py、backend/app/services/store.py
 from __future__ import annotations
 
@@ -27,8 +27,8 @@ class IngestError(ValueError):
     """上传文件无法成为有效数据集。"""
 
 
-def ingest_file(path, name: str) -> dict:
-    """读取并清洗文件，返回数据集标识、画像和清洗日志。"""
+def ingest_file(path, name: str, *, owner: str = "") -> dict:
+    """读取并清洗文件，返回数据集标识、画像和清洗日志；owner 记下是谁上传的（空＝没开认证）。"""
     source_path = Path(path)
     suffix = Path(name).suffix.lower()
     if suffix not in ALLOWED_SUFFIXES:
@@ -81,6 +81,7 @@ def ingest_file(path, name: str) -> dict:
             "profile_json": json.dumps(profile, ensure_ascii=False),
             "clean_log": json.dumps(clean_log, ensure_ascii=False),
             "table_version": 1,
+            "owner": owner or None,
         }
     )
     return result

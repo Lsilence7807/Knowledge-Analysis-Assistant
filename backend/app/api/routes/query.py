@@ -4,7 +4,7 @@
 # 依赖：fastapi、app/api/deps.py、app/schemas/__init__.py、app/services/db.py
 from fastapi import APIRouter, HTTPException
 
-from app.api.deps import get_dataset
+from app.api.deps import CurrentUser, get_dataset
 from app.core import db
 from app.schemas import QueryIn, StatsIn
 
@@ -21,9 +21,9 @@ def run_query(payload: QueryIn) -> dict:
 
 
 @router.post("/stats")
-def dataset_stats(payload: StatsIn) -> dict:
+def dataset_stats(payload: StatsIn, user: CurrentUser = None) -> dict:
     """返回数据集的描述统计与异常行；数据集不存在返回 404。"""
-    dataset = get_dataset(payload.dataset_id)
+    dataset = get_dataset(payload.dataset_id, user)
     try:
         result = db.describe(payload.dataset_id, payload.columns)
     except db.SQLRejected as exc:

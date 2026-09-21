@@ -1,24 +1,32 @@
 # 文件：backend/app/main.py
 # 作用：应用工厂：装配 api 路由、生命周期与前端静态目录；只做装配，端点实现全在 api/routes/
 # 阶段：F1 后端骨架（原 app/main.py 的 554 行路由拆进 api/routes/*.py）
-# 依赖：FastAPI、app/api/__init__.py、app/core/config.py、app/services/store.py
+#       F7 装配限流（slowapi）、跨域（CORS，按需）与「开了认证没设口令就拒绝启动」的自检
+# 依赖：FastAPI、slowapi、app/api/__init__.py、app/core/{config,security}.py、app/services/store.py
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from app.api import api_router
 from app.api.routes.ask import _stream_frames  # noqa: F401  test_p17_stream 按改造前的名字引用它
-from app.core import config, db
+from app.core import config, db, security
 from app.services import cache, memory, store
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     """启动时准备数据目录、跑迁移、兜建表；迁移失败即启动失败，不带病运行。"""
+    # 公开端开了认证却没设口令：宁可起不来，也不要以「看起来要登录」的姿态裸奔（§7、§10）
+    if security.auth_enabled() and not security.password_configured():
+        raise RuntimeError("已开认证（ENABLE_AUTH=true）但没设 APP_PASSWORD_HASH：先设口令再启动")
     config.ensure_dirs()
     db.migrate()
     store.ensure_tables()
@@ -35,6 +43,21 @@ BUILD_HINT = (
 def create_app() -> FastAPI:
     """装配应用：API 路由先挂，前端产物垫底，最后兜 SPA 回退。"""
     application = FastAPI(title="Knowledge Analysis Assistant", version="0.1.0", lifespan=lifespan)
+    # slowapi 的规矩：限流器与 429 处理器挂到 app 上；中间件只在公开端装（本地自用没必要给自己添 429）
+    application.state.limiter = security.limiter
+    application.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    if security.auth_enabled():
+        application.add_middleware(SlowAPIMiddleware)
+    # 跨域只在配了白名单时开：默认同源部署（前端由本服务一起给）不需要 CORS，也不给通配后门
+    origins = [item.strip() for item in config.CORS_ORIGINS.split(",") if item.strip()]
+    if origins:
+        application.add_middleware(
+            CORSMiddleware,
+            allow_origins=origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
     application.include_router(api_router)
 
     if (config.FRONTEND_DIST / "assets").is_dir():

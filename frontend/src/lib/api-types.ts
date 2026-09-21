@@ -77,7 +77,7 @@ export interface paths {
         };
         /**
          * Dataset Profile
-         * @description 返回指定数据集的画像与清洗日志。
+         * @description 返回指定数据集的画像与清洗日志；不存在由 get_dataset 给 404。
          */
         get: operations["dataset_profile_datasets__dataset_id__profile_get"];
         put?: never;
@@ -100,7 +100,7 @@ export interface paths {
         post?: never;
         /**
          * Drop Dataset
-         * @description 删除数据集：DuckDB 表、原始上传文件与元数据一起清（K-015 最小版）；不存在返回 404。
+         * @description 删除数据集：DuckDB 表、原始上传文件与元数据一起清（K-015 最小版）。
          */
         delete: operations["drop_dataset_datasets__dataset_id__delete"];
         options?: never;
@@ -148,7 +148,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/tools": {
+    "/ask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ask
+         * @description 提问 →（模型）→ SQL → 结果表 → 结论；模型不可用或 SQL 不合法时降级，HTTP 仍 200。
+         */
+        post: operations["ask_ask_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ask/stream": {
         parameters: {
             query?: never;
             header?: never;
@@ -156,10 +176,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List Tools
-         * @description 已注册工具、白名单与预算；供前端步骤面板与排障查看，只读不执行。
+         * Ask Stream
+         * @description 流式提问（SSE）；模型不可用或 SQL 不合法只在流里插 degraded 帧，HTTP 仍是 200。
          */
-        get: operations["list_tools_tools_get"];
+        get: operations["ask_stream_ask_stream_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -168,7 +188,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/bench": {
+    "/insight": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Explain
+         * @description 对一条 SQL 的结果表出结论；模型不可用时 insight 为空并记 degraded，HTTP 仍 200。
+         */
+        post: operations["explain_insight_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/models": {
         parameters: {
             query?: never;
             header?: never;
@@ -176,11 +216,15 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Bench Baseline
-         * @description 返回最近一次性能基线（bench/baseline.json）；没跑过压测时给结构化说明，不报错。
+         * List Model Settings
+         * @description 可用模型 profile：密钥只回「是否已配」，不回明文。
          */
-        get: operations["bench_baseline_bench_get"];
-        put?: never;
+        get: operations["list_model_settings_settings_models_get"];
+        /**
+         * Save Model Settings
+         * @description 新增或更新一个 OpenAI 兼容 profile、写密钥到 config/local.json，并设为默认；保存即生效。
+         */
+        put: operations["save_model_settings_settings_models_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -252,64 +296,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/ask": {
+    "/mcp/tools": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Mcp Tools
+         * @description 列配置里那台 MCP server 的工具（含是否在白名单内）；开关关闭或 server 起不来时 503。
+         */
+        get: operations["mcp_tools_mcp_tools_get"];
         put?: never;
-        /**
-         * Ask
-         * @description 提问 →（模型）→ SQL → 结果表 → 结论；模型不可用或 SQL 不合法时降级，HTTP 仍 200。
-         */
-        post: operations["ask_ask_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/insight": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Explain
-         * @description 对一条 SQL 的结果表出结论；模型不可用时 insight 为空并记 degraded，HTTP 仍 200。
-         */
-        post: operations["explain_insight_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/settings/models": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Model Settings
-         * @description 可用模型 profile：密钥只回「是否已配」，不回明文。
-         */
-        get: operations["list_model_settings_settings_models_get"];
-        /**
-         * Save Model Settings
-         * @description 新增或更新一个 OpenAI 兼容 profile、写密钥到 config/local.json，并设为默认；保存即生效。
-         */
-        put: operations["save_model_settings_settings_models_put"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mcp/call": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mcp Call
+         * @description 调一个白名单内的 MCP 工具，返回按不可信数据包裹过的结果；工具被拒或 server 不可用不抛 500。
+         */
+        post: operations["mcp_call_mcp_call_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -356,7 +376,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/ask/stream": {
+    "/tools": {
         parameters: {
             query?: never;
             header?: never;
@@ -364,10 +384,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Ask Stream
-         * @description 流式提问（SSE）；模型不可用或 SQL 不合法只在流里插 degraded 帧，HTTP 仍是 200。
+         * List Tools
+         * @description 已注册工具、白名单与预算；供前端步骤面板与排障查看，只读不执行。
          */
-        get: operations["ask_stream_ask_stream_get"];
+        get: operations["list_tools_tools_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -376,27 +396,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/mcp/tools": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Mcp Tools
-         * @description 列配置里那台 MCP server 的工具（含是否在白名单内）；开关关闭或 server 起不来时 503。
-         */
-        get: operations["mcp_tools_mcp_tools_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/mcp/call": {
+    "/sessions": {
         parameters: {
             query?: never;
             header?: never;
@@ -406,10 +406,150 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Mcp Call
-         * @description 调一个白名单内的 MCP 工具，返回按不可信数据包裹过的结果；工具被拒或 server 不可用不抛 500。
+         * Create Session
+         * @description 开一个会话；dataset_id 必须存在，否则 404（会话总是绑在一个数据集上）。
          */
-        post: operations["mcp_call_mcp_call_post"];
+        post: operations["create_session_sessions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{sid}/ask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Session Ask
+         * @description 会话内提问：同一问题先查精确缓存，命中就复用 SQL、结论重算（§4.7 的问答复用契约）。
+         */
+        post: operations["session_ask_sessions__sid__ask_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{sid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Session
+         * @description 删会话与它的轮次（步骤流水按 tasks 追溯，不跟着删）。
+         */
+        delete: operations["delete_session_sessions__sid__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{sid}/steps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Session Steps
+         * @description 会话里每一轮的 agent 步骤轨迹（P13 就把步骤落库了，这里只是按会话查出来）。
+         */
+        get: operations["session_steps_sessions__sid__steps_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cache/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Cache Stats
+         * @description 缓存命中率：精确层给本表统计，语义层由 F5 填（现在恒 0）。
+         */
+        get: operations["cache_stats_cache_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/bench": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Bench Baseline
+         * @description 返回最近一次性能基线（bench/baseline.json）；没跑过压测时给结构化说明，不报错。
+         */
+        get: operations["bench_baseline_bench_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Login
+         * @description 单密码登录：口令对了签发 cookie，错了 401；同一 IP 每分钟只放 LOGIN_LIMIT 次，超出 429。
+         */
+        post: operations["login_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Logout
+         * @description 登出：清掉 cookie；本来就没登录也返回 200（幂等）。
+         */
+        post: operations["logout_logout_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -486,6 +626,17 @@ export interface components {
             question: string;
         };
         /**
+         * LoginIn
+         * @description POST /login 请求体：单密码登录口令（P11）。
+         */
+        LoginIn: {
+            /**
+             * Password
+             * @description 登录密码
+             */
+            password: string;
+        };
+        /**
          * QueryIn
          * @description POST /query 请求体：一条只读 SQL。
          */
@@ -505,6 +656,37 @@ export interface components {
              * @default
              */
             dataset_id: string;
+        };
+        /**
+         * SessionAskIn
+         * @description POST /sessions/{sid}/ask 请求体：提问；dataset_id 留空就用会话绑定的那个。
+         */
+        SessionAskIn: {
+            /** Question */
+            question: string;
+            /**
+             * Dataset Id
+             * @default
+             */
+            dataset_id: string;
+        };
+        /**
+         * SessionIn
+         * @description POST /sessions 请求体：会话绑定的数据集与标题。
+         */
+        SessionIn: {
+            /** Dataset Id */
+            dataset_id: string;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * Model Id
+             * @default
+             */
+            model_id: string;
         };
         /**
          * StatsIn
@@ -771,7 +953,110 @@ export interface operations {
             };
         };
     };
-    list_tools_tools_get: {
+    ask_ask_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AskIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ask_stream_ask_stream_get: {
+        parameters: {
+            query?: {
+                question?: string;
+                dataset_id?: string;
+                session_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    explain_insight_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InsightIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_model_settings_settings_models_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -793,14 +1078,20 @@ export interface operations {
             };
         };
     };
-    bench_baseline_bench_get: {
+    save_model_settings_settings_models_put: {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -811,6 +1102,15 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -948,77 +1248,7 @@ export interface operations {
             };
         };
     };
-    ask_ask_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AskIn"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    explain_insight_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["InsightIn"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_model_settings_settings_models_get: {
+    mcp_tools_mcp_tools_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -1040,14 +1270,14 @@ export interface operations {
             };
         };
     };
-    save_model_settings_settings_models_put: {
+    mcp_call_mcp_call_post: {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody: {
+        requestBody?: {
             content: {
                 "application/json": {
                     [key: string]: unknown;
@@ -1134,40 +1364,7 @@ export interface operations {
             };
         };
     };
-    ask_stream_ask_stream_get: {
-        parameters: {
-            query?: {
-                question?: string;
-                dataset_id?: string;
-                session_id?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    mcp_tools_mcp_tools_get: {
+    list_tools_tools_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -1189,18 +1386,16 @@ export interface operations {
             };
         };
     };
-    mcp_call_mcp_call_post: {
+    create_session_sessions_post: {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
+                "application/json": components["schemas"]["SessionIn"];
             };
         };
         responses: {
@@ -1222,6 +1417,210 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    session_ask_sessions__sid__ask_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SessionAskIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_session_sessions__sid__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    session_steps_sessions__sid__steps_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cache_stats_cache_stats_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    bench_baseline_bench_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    login_login_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    logout_logout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };

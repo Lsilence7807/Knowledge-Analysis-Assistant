@@ -23,6 +23,13 @@ lancedb            # why: 内嵌向量库（data/vectors） | 阶段 F5(P14)
 sqlalchemy         # why: 元数据库 ORM/引擎（F6 换掉手拼 SQL 的 store） | 阶段 F6
 alembic            # why: 表结构迁移（基线 DDL 与改造前逐字一致） | 阶段 F6
 pydantic-settings  # why: 配置类化：环境变量与默认值一处声明 | 阶段 F6
+sqlglot            # why: SQL 守卫改解析树判定（换掉手写正则掩码） | 阶段 F7(P11)
+RestrictedPython   # why: 代码沙箱的编译期守卫（换掉手写 AST 逃逸检查） | 阶段 F7
+itsdangerous       # why: 登录 cookie 的签名与过期（换掉手写 HMAC） | 阶段 F7(P11)
+slowapi            # why: 限流：每 IP 上限与登录失败限流 | 阶段 F7(P11)
+sse-starlette      # why: SSE 分帧与断连处理（换掉手写拼帧） | 阶段 F7(P17)
+langchain-core     # why: 工具 schema 与 @tool（换掉手写 JSON Schema 字典） | 阶段 F7
+# 未装 langchain-mcp-adapters：它要求 mcp<2.0.0，与仓库要的 mcp==2.2.0 冲突（MCP 侧继续用官方 SDK，见 §11）
 
 # --- 运行期：扩展阶段 ---
 mcp                # why: 官方 MCP 客户端 SDK | 阶段 P8

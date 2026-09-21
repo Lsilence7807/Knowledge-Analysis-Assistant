@@ -4,7 +4,7 @@
 # 依赖：fastapi、app/api/deps.py、app/schemas/__init__.py、app/services/{db,insight}.py
 from fastapi import APIRouter, HTTPException
 
-from app.api.deps import get_dataset
+from app.api.deps import CurrentUser, get_dataset
 from app.core import db
 from app.schemas import InsightIn
 from app.services import insight, memory
@@ -13,9 +13,9 @@ router = APIRouter()
 
 
 @router.post("/insight")
-def explain(payload: InsightIn) -> dict:
+def explain(payload: InsightIn, user: CurrentUser = None) -> dict:
     """对一条 SQL 的结果表出结论；模型不可用时 insight 为空并记 degraded，HTTP 仍 200。"""
-    dataset = get_dataset(payload.dataset_id)
+    dataset = get_dataset(payload.dataset_id, user)
     try:
         result = db.exec_sql(payload.sql)
     except db.SQLRejected as exc:

@@ -1,11 +1,12 @@
 # 文件：backend/app/api/__init__.py
 # 作用：API 路由汇总：每个路由文件一条 include_router；新端点进对应文件，新文件加在末尾（热点文件，只追加）
-# 阶段：F1 后端骨架
-# 依赖：fastapi、app/api/routes/*.py
-from fastapi import APIRouter
+# 阶段：F1 后端骨架；F7 给整个 api_router 挂认证依赖（§4.3 里认证列「否」的路径在 security 里放行）
+# 依赖：fastapi、app/api/routes/*.py、app/core/security.py
+from fastapi import APIRouter, Depends
 
 from app.api.routes import (
     ask,
+    auth,
     bench,
     capabilities,
     datasets,
@@ -21,8 +22,10 @@ from app.api.routes import (
     skills,
     tools,
 )
+from app.core import security
 
-api_router = APIRouter()
+# 默认要求登录：漏挂某条新路由不会静默裸奔；免认证路径写死在 security.EXEMPT_PATHS
+api_router = APIRouter(dependencies=[Depends(security.require_auth)])
 
 api_router.include_router(health.router)
 api_router.include_router(capabilities.router)
@@ -39,3 +42,4 @@ api_router.include_router(metrics.router)
 api_router.include_router(tools.router)
 api_router.include_router(sessions.router)
 api_router.include_router(bench.router)
+api_router.include_router(auth.router)

@@ -1,6 +1,7 @@
 # 文件：backend/app/schemas/__init__.py
 # 作用：HTTP 边界的 pydantic 模型，接口契约以本文件为准
 # 阶段：P0 骨架与契约冻结（P4 加 Insight，K-013 加请求体模型，K-009 给 Finding 加引用字段，P15 加 SandboxIn）
+#       F7（兼 P11）加 LoginIn
 # 依赖：pydantic
 from __future__ import annotations
 
@@ -100,3 +101,9 @@ class SandboxIn(BaseModel):
 
     code: str
     dataset_id: str = ""
+
+
+class LoginIn(BaseModel):
+    """POST /login 请求体：单密码登录口令（P11）。"""
+
+    password: str = Field(description="登录密码")

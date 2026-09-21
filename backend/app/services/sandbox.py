@@ -1,8 +1,10 @@
 # 文件：backend/app/services/sandbox.py
-# 作用：受限代码执行：AST 静态检查 + `python -I` 隔离子进程 + 项目内临时工作目录 + 超时 + 输出上限，
+# 作用：受限代码执行：RestrictedPython 编译期守卫 + `python -I` 隔离子进程 + 项目内临时工作目录 + 超时 + 输出上限，
 #       只把当前数据集的只读副本（dataset.csv）交给用户代码，代码里拿不到密钥、网络与项目其它文件
 # 阶段：P15 沙箱代码执行与指标语义层
-# 依赖：标准库 ast、os、re、shutil、subprocess、sys、time、uuid、contextlib、pathlib、
+#       F7 手写 AST 逃逸检查换 RestrictedPython 编译期守卫（子进程、超时、临时目录三件事不动）
+# 依赖：RestrictedPython、标准库 ast（只用于 import 白名单与禁用调用）、operator、os、re、shutil、
+#       subprocess、sys、time、uuid、contextlib、pathlib、
 #       backend/app/core/config.py、backend/app/core/db.py、backend/app/core/exec.py
 from __future__ import annotations
 
@@ -16,6 +18,8 @@ import time
 from contextlib import closing
 from pathlib import Path
 from uuid import uuid4
+
+from RestrictedPython import compile_restricted
 
 from app.core import config, db, exec
 from app.services import store
@@ -57,19 +61,66 @@ ALLOWED_IMPORTS = frozenset(
 )
 # 文件、动态执行与交互入口：静态检查先挡一道，子进程里再从 builtins 里摘掉（两道都过不去）
 BANNED_CALLS = frozenset({"open", "eval", "exec", "compile", "__import__", "input", "breakpoint"})
+# RestrictedPython 的 safe_builtins 很保守（连 print/sum/bytearray 都没有），按「数据计算够用」补一小撮；
+# 补进来的全是纯计算与容器构造，碰文件、进程、网络与自省的一个都不加
+EXTRA_BUILTINS = (
+    "all",
+    "any",
+    "bytearray",
+    "dict",
+    "enumerate",
+    "filter",
+    "format",
+    "frozenset",
+    "iter",
+    "list",
+    "map",
+    "max",
+    "min",
+    "next",
+    "print",
+    "reversed",
+    "set",
+    "sum",
+    "type",
+)
 DATASET_ID_CHARS = re.compile("[A-Za-z0-9_]+")
 
 # 沙箱执行器：由 run_code 写进工作目录，子进程只认 argv（用户代码路径、数据集副本路径），不读环境变量
 RUNNER = """# 沙箱执行器（由 app/sandbox.py 生成，勿手改）
 import builtins
+import operator
 import sys
 import traceback
 
 import numpy as np
 import pandas as pd
+from RestrictedPython import PrintCollector, compile_restricted, safe_builtins
+from RestrictedPython.Guards import (
+    full_write_guard,
+    guarded_iter_unpack_sequence,
+    guarded_unpack_sequence,
+    safer_getattr,
+)
 
 ALLOWED = __ALLOWED__
+EXTRA = __EXTRA__
 _real_import = builtins.__import__
+# += 这类原地运算由 RestrictedPython 编译成 _inplacevar_ 调用，框架不提供实现，只能在这里按运算符表挂
+INPLACE = {
+    "+=": operator.iadd,
+    "-=": operator.isub,
+    "*=": operator.imul,
+    "/=": operator.itruediv,
+    "//=": operator.ifloordiv,
+    "%=": operator.imod,
+    "**=": operator.ipow,
+    "&=": operator.iand,
+    "|=": operator.ior,
+    "^=": operator.ixor,
+    ">>=": operator.irshift,
+    "<<=": operator.ilshift,
+}
 
 
 def _guard_import(name, *args, **kwargs):
@@ -78,22 +129,43 @@ def _guard_import(name, *args, **kwargs):
     return _real_import(name, *args, **kwargs)
 
 
-safe = dict(vars(builtins))
-for _banned in ("open", "eval", "exec", "compile", "input", "breakpoint", "exit", "quit", "help"):
-    safe.pop(_banned, None)
+def _inplacevar_(op, left, right):
+    return INPLACE[op](left, right)
+
+
+safe = {**safe_builtins, **{name: getattr(builtins, name) for name in EXTRA if hasattr(builtins, name)}}
 safe["__import__"] = _guard_import
 
 code_path, data_path = sys.argv[1], sys.argv[2]
-namespace = {"__builtins__": safe, "__name__": "__main__", "pd": pd, "np": np}
+namespace = {
+    "__builtins__": safe,
+    "__name__": "__main__",
+    # RestrictedPython 的守卫插口：属性、下标、赋值、迭代、解包与类定义各挂一个
+    "_getattr_": safer_getattr,
+    "_getitem_": operator.getitem,
+    "_write_": full_write_guard,
+    "_getiter_": iter,
+    "_print_": PrintCollector,
+    "_unpack_sequence_": guarded_unpack_sequence,
+    "_iter_unpack_sequence_": guarded_iter_unpack_sequence,
+    "_inplacevar_": _inplacevar_,
+    "__metaclass__": type,
+    "pd": pd,
+    "np": np,
+}
 if data_path:
     namespace["df"] = pd.read_csv(data_path)
 with open(code_path, encoding="utf-8") as handle:
     source = handle.read()
 try:
-    exec(compile(source, "user_code.py", "exec"), namespace)
+    exec(compile_restricted(source, "user_code.py", "exec"), namespace)
 except BaseException:
     traceback.print_exc()
     sys.exit(1)
+# print 被 RestrictedPython 收进 _print_ 收集器，这里再倒回真实 stdout（顺序在 result 之前）
+collected = namespace.get("_print")
+if callable(collected):
+    sys.stdout.write(str(collected()))
 if namespace.get("result") is not None:
     print(namespace["result"])
 """
@@ -110,13 +182,19 @@ def _check_module(name: str) -> None:
 
 
 def check_code(code: str) -> None:
-    """静态检查：语法、import 白名单、危险调用与双下划线属性；任一不过抛 SandboxError，不启动子进程。"""
+    """静态检查：语法与逃逸交给 RestrictedPython 编译期守卫，import 白名单与禁用调用仍是本层策略；
+    任一不过抛 SandboxError，不启动子进程。"""
     if not (code or "").strip():
         raise SandboxError("代码是空的")
     try:
         tree = ast.parse(code, filename="user_code.py", mode="exec")
     except SyntaxError as exc:
         raise SandboxError(f"代码语法错误：{exc.msg}（第 {exc.lineno} 行）") from exc
+    try:
+        # 下划线开头的名字与属性、__import__、绕过内建限制的写法都在这里判死（§3.3 逃逸清单的静态那半）
+        compile_restricted(code, "user_code.py", "exec")
+    except SyntaxError as exc:
+        raise SandboxError(f"代码不允许：{exc.msg}（第 {exc.lineno} 行）") from exc
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
@@ -125,9 +203,6 @@ def check_code(code: str) -> None:
             _check_module(node.module or "")
         elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in BANNED_CALLS:
             raise SandboxError(f"沙箱不允许调用 {node.func.id}()：文件读写与动态执行都不在能力范围内")
-        elif isinstance(node, ast.Attribute) and node.attr.startswith("__"):
-            # `().__class__.__bases__` 这类是绕开 builtins 限制的经典入口，直接判死
-            raise SandboxError(f"沙箱不允许访问 {node.attr}：双下划线属性是绕过限制的常见入口")
 
 
 def _workdir() -> Path:
@@ -161,7 +236,9 @@ def _read_capped(path: Path, limit: int) -> tuple[str, bool]:
 
 def _run_process(workdir: Path, code: str, data_path: Path | None, timeout_s: int, max_output: int) -> dict:
     """真正跑子进程的部分（只由 run_blocking 调用）；输出落文件再截断读，巨量输出不会撑爆父进程内存。"""
-    runner = RUNNER.replace("__ALLOWED__", repr(sorted(ALLOWED_IMPORTS)))
+    runner = RUNNER.replace("__ALLOWED__", repr(sorted(ALLOWED_IMPORTS))).replace(
+        "__EXTRA__", repr(sorted(EXTRA_BUILTINS))
+    )
     (workdir / "runner.py").write_text(runner, encoding="utf-8", newline="")
     (workdir / "user_code.py").write_text(code, encoding="utf-8", newline="")
     argv = [

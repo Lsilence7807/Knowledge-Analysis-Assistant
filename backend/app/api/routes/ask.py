@@ -13,9 +13,9 @@ from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import StreamingResponse
+from sse_starlette.sse import EventSourceResponse
 
-from app.api.deps import get_dataset
+from app.api.deps import CurrentUser, get_dataset
 from app.api.routes.insight import attach_insight
 from app.core import config, db
 from app.schemas import AskIn
@@ -25,12 +25,12 @@ router = APIRouter()
 
 
 @router.post("/ask")
-def ask(payload: AskIn) -> dict:
+def ask(payload: AskIn, user: CurrentUser = None) -> dict:
     """提问 →（模型）→ SQL → 结果表 → 结论；模型不可用或 SQL 不合法时降级，HTTP 仍 200。"""
     dataset_id = payload.dataset_id
     question = payload.question.strip()
     session_id = payload.session_id
-    dataset = get_dataset(dataset_id)
+    dataset = get_dataset(dataset_id, user)
     if not question:
         raise HTTPException(status_code=400, detail="问题不能为空")
     body = _ask_body(question, session_id, dataset_id, dataset)
@@ -97,20 +97,17 @@ async def ask_stream(
     question: str = "",
     dataset_id: str = "",
     session_id: str = "",
-) -> StreamingResponse:
+    user: CurrentUser = None,
+) -> EventSourceResponse:
     """流式提问（SSE）；模型不可用或 SQL 不合法只在流里插 degraded 帧，HTTP 仍是 200。"""
     if not stream.ENABLED:
         raise HTTPException(status_code=503, detail="流式能力未启用：设 ENABLE_STREAM=true 再重启服务")
     # 校验发生在开流之前：数据集不存在、问题为空仍然是普通 HTTP 错误，不用从流里猜
-    dataset = await run_in_threadpool(get_dataset, dataset_id)
+    dataset = await run_in_threadpool(get_dataset, dataset_id, user)
     question = question.strip()
     if not question:
         raise HTTPException(status_code=400, detail="问题不能为空")
-    return StreamingResponse(
-        _stream_frames(request, question, session_id or None, dataset_id, dataset),
-        media_type="text/event-stream",
-        headers=stream.SSE_HEADERS,
-    )
+    return EventSourceResponse(_stream_frames(request, question, session_id or None, dataset_id, dataset))
 
 
 async def _gone(request: Request) -> bool:

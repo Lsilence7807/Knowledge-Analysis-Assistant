@@ -2,6 +2,7 @@
 # 作用：集中读取环境变量（pydantic-settings）、本地设置（config/local.json）与路径，其它模块只从这里取配置
 # 阶段：P0 骨架与契约冻结（P3 加密钥来源，P5 加密钥写入；P21 加并发与压测路径；F1 搬到 core/config.py）
 #       F6 环境变量交 pydantic-settings（BaseSettings），模块级常量名一个没改，测试仍 monkeypatch 这里
+#       F7 加认证（ENABLE_AUTH / AUTH_DISABLED / APP_PASSWORD_HASH）与跨域白名单（CORS_ORIGINS）
 # 依赖：pydantic-settings、标准库 json、pathlib；本文件是仓库根 BASE_DIR 的唯一锚点，其它模块不许自己拼路径
 from __future__ import annotations
 
@@ -32,6 +33,10 @@ class Settings(BaseSettings):
     LLM_API_KEY: str = ""
     LLM_BACKEND: str = "litellm"
     FRONTEND_DIST: Path | None = None
+    ENABLE_AUTH: bool = False
+    AUTH_DISABLED: bool = False
+    APP_PASSWORD_HASH: str = ""
+    CORS_ORIGINS: str = ""
 
 
 _settings = Settings()
@@ -52,6 +57,13 @@ ENABLE_CACHE = _settings.ENABLE_CACHE
 # 语义检索与语义缓存：关掉回退 FTS5 与精确键（缺 embedding 配置时也自动回退）
 ENABLE_SEMANTIC_CACHE = _settings.ENABLE_SEMANTIC_CACHE
 EXEC_MAX_WORKERS = _settings.EXEC_MAX_WORKERS
+
+# 认证（§7 与 §10）：ENABLE_AUTH=true 且 AUTH_DISABLED=false 才要求登录；本地默认不要求
+ENABLE_AUTH = _settings.ENABLE_AUTH
+AUTH_DISABLED = _settings.AUTH_DISABLED
+APP_PASSWORD_HASH = _settings.APP_PASSWORD_HASH
+# 跨域白名单（逗号分隔）：默认空＝同源部署（前端由后端一起服务）不需要 CORS
+CORS_ORIGINS = _settings.CORS_ORIGINS
 
 LLM_API_KEY = _settings.LLM_API_KEY
 # 模型层后端：litellm（默认）或 direct（原 OpenAI 单厂商客户端，LiteLLM 出问题时一键回落）

@@ -1,16 +1,20 @@
 # 文件：backend/app/api/deps.py
 # 作用：HTTP 边界的依赖注入：配置、元数据库连接、数据集与能力开关；路由只声明 Depends，不自己取全局
 # 阶段：F1 后端骨架（get_current_user 留 F7）
-# 依赖：fastapi、app/core/config.py、app/services/{registry,store}.py
+#       F7 补上当前用户依赖，并按 §7 在取数据集时校验归属
+# 依赖：fastapi、app/core/{config,security}.py、app/services/{registry,store}.py
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import HTTPException
+from fastapi import Depends, HTTPException
 
-from app.core import config, db
+from app.core import config, db, security
 from app.services import registry, store
+
+# 当前用户：未开认证给 None，开了认证缺/坏 cookie 直接 401（F7）
+CurrentUser = Annotated[str | None, Depends(security.current_user)]
 
 # 能力关闭时的 503 文案：带上开启方式，调用方直接展示，不用回来翻文档
 CAPABILITY_HINTS = {
@@ -32,12 +36,21 @@ def get_session() -> Iterator[Any]:
         yield orm
 
 
-def get_dataset(dataset_id: str) -> dict:
-    """按 id 取数据集，不存在直接 404。作依赖用时 dataset_id 来自路径参数；body 场景由路由直接调用。"""
+def get_dataset(dataset_id: str, user: CurrentUser = None) -> dict:
+    """按 id 取数据集，不存在直接 404。作依赖用时 dataset_id 来自路径参数；body 场景由路由直接调用。
+
+    开了认证时，别人的数据集也按 404 回（不泄露「存在但不属于你」这种信息，§7）。
+    """
     dataset = store.get_dataset(dataset_id)
-    if dataset is None:
+    if dataset is None or not _readable(dataset, user):
         raise HTTPException(status_code=404, detail="数据集不存在")
     return dataset
+
+
+def _readable(dataset: dict, user: str | None) -> bool:
+    """归属校验：没开认证（user 为 None）不拦；老数据 owner 为空也不拦；其余必须对得上。"""
+    owner = dataset.get("owner")
+    return user is None or not owner or owner == user
 
 
 def require_capability(name: str):

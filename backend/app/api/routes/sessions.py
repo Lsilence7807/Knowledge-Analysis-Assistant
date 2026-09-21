@@ -9,7 +9,7 @@ from uuid import uuid4
 from fastapi import APIRouter, HTTPException
 from sqlalchemy import select
 
-from app.api.deps import get_dataset
+from app.api.deps import CurrentUser, get_dataset
 from app.api.routes.ask import _ask_body
 from app.api.routes.insight import attach_insight
 from app.core import config, db
@@ -21,14 +21,14 @@ router = APIRouter()
 
 
 @router.post("/sessions")
-def create_session(payload: SessionIn) -> dict:
+def create_session(payload: SessionIn, user: CurrentUser = None) -> dict:
     """开一个会话；dataset_id 必须存在，否则 404（会话总是绑在一个数据集上）。"""
-    get_dataset(payload.dataset_id)
+    get_dataset(payload.dataset_id, user)
     return {"session": memory.create(payload.dataset_id, payload.title, payload.model_id)}
 
 
 @router.post("/sessions/{sid}/ask")
-def session_ask(sid: str, payload: SessionAskIn) -> dict:
+def session_ask(sid: str, payload: SessionAskIn, user: CurrentUser = None) -> dict:
     """会话内提问：同一问题先查精确缓存，命中就复用 SQL、结论重算（§4.7 的问答复用契约）。"""
     session = memory.get(sid)
     if session is None:
@@ -37,7 +37,7 @@ def session_ask(sid: str, payload: SessionAskIn) -> dict:
     if not question:
         raise HTTPException(status_code=400, detail="问题不能为空")
     dataset_id = payload.dataset_id or session["dataset_id"]
-    dataset = get_dataset(dataset_id)
+    dataset = get_dataset(dataset_id, user)
     key = cache.key(dataset_id, dataset["table_version"], session.get("model_id") or "", question)
     vector = cache.question_vector(question)
     hit = cache.lookup(key) if config.ENABLE_CACHE else None

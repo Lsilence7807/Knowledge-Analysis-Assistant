@@ -3,12 +3,17 @@
 #       list_skills / use_skill / search_kb / list_metrics / run_code / call_mcp_tool）
 # 阶段：P13 Agent 循环与工具调用（K-006：每步超时按 tools.json 透传给 db.describe；
 #       K-023：白名单校验收进 call()，不再只靠 agent 那层；P6 加 list_skills / use_skill；P7 加 search_kb；
-#       P15 加 list_metrics 与 run_code（沙箱）；P8 加 call_mcp_tool（MCP））
-# 依赖：json、backend/app/core/config.py、backend/app/core/db.py、
+#       P15 加 list_metrics 与 run_code（沙箱）；P8 加 call_mcp_tool（MCP）；
+#       F7 手写 schema 字典换 LangChain @tool + pydantic 入参模型（K-023 白名单位置不动））
+# 依赖：json、langchain_core、pydantic、backend/app/core/config.py、backend/app/core/db.py、
 #       backend/app/services/metrics.py、backend/app/services/store.py
 from __future__ import annotations
 
 import json
+
+from langchain_core.tools import tool as lc_tool
+from langchain_core.utils.function_calling import convert_to_openai_tool
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.core import config, db
 from app.services import metrics, registry, store
@@ -38,32 +43,37 @@ def settings() -> dict:
     return {**DEFAULT_SETTINGS, **loaded} if isinstance(loaded, dict) else dict(DEFAULT_SETTINGS)
 
 
-def register(name: str, fn, schema: dict, kind: str) -> None:
-    """登记一个工具：schema 是参数的 JSON Schema，kind 取 read / write，描述取函数 docstring。"""
+class _Args(BaseModel):
+    """工具入参模型基类：多给的字段直接拒掉，模型编出来的参数不该被静默吞掉。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+def _brief(exc: ValidationError) -> str:
+    """把 pydantic 的多行报错压成一行：这句话要回给模型看。"""
+    first = exc.errors()[0] if exc.errors() else {}
+    where = ".".join(str(part) for part in first.get("loc") or [])
+    return f"{where} {first.get('msg', '')}".strip()
+
+
+def register(name: str, fn, args_schema: type[BaseModel], kind: str) -> None:
+    """登记一个工具：args_schema 是 pydantic 入参模型（JSON Schema 由 LangChain 生成，§4.8 形状不变），
+    kind 取 read / write，描述取函数 docstring。"""
     if kind not in KINDS:
         raise ValueError(f"kind 只能是 {KINDS}，收到 {kind}")
+    description = (fn.__doc__ or "").strip()
     _TOOLS[name] = {
         "fn": fn,
-        "schema": schema,
+        "args_schema": args_schema,
         "kind": kind,
-        "description": (fn.__doc__ or "").strip(),
+        "tool": lc_tool(name, args_schema=args_schema, description=description)(fn),
     }
 
 
 def all_tools(allow: set[str] | None = None) -> list[dict]:
-    """按 OpenAI tools 格式列出工具；给了 allow 就只留白名单里的。"""
+    """按 OpenAI tools 格式列出工具（schema 从 pydantic 入参模型生成）；给了 allow 就只留白名单里的。"""
     names = sorted(_TOOLS if allow is None else set(_TOOLS) & set(allow))
-    return [
-        {
-            "type": "function",
-            "function": {
-                "name": name,
-                "description": _TOOLS[name]["description"],
-                "parameters": _TOOLS[name]["schema"],
-            },
-        }
-        for name in names
-    ]
+    return [convert_to_openai_tool(_TOOLS[name]["tool"]) for name in names]
 
 
 def kinds() -> dict[str, str]:
@@ -82,26 +92,48 @@ def call(name: str, arguments: dict) -> dict:
         store.log_capability("tools", "error", f"越权工具调用：{name}")
         raise ToolError(f"工具 {name} 不在白名单内，已拒绝；可用工具：{'、'.join(allow)}")
     try:
-        return tool["fn"](**(arguments if isinstance(arguments, dict) else {}))
-    except TypeError as exc:
+        # dataset_id 由 agent 统一注入（§4.2），不是工具自己的入参，校验前先摘出来
+        given = dict(arguments) if isinstance(arguments, dict) else {}
+        parsed = tool["args_schema"](**{key: value for key, value in given.items() if key != "dataset_id"})
+    except ValidationError as exc:
         # 参数名或类型不对：让模型下一轮自己改，不当成系统故障
-        raise ToolError(f"工具 {name} 参数不匹配：{exc}") from exc
+        raise ToolError(f"工具 {name} 参数不匹配：{_brief(exc)}") from exc
+    try:
+        return tool["fn"](**parsed.model_dump(), dataset_id=str(given.get("dataset_id") or ""))
     except db.SQLRejected as exc:
         raise ToolError(f"工具 {name} 执行失败：{exc}") from exc
     except Exception as exc:
         raise ToolError(f"工具 {name} 执行失败：{exc}") from exc
 
 
-COLUMNS_ARG = {
-    "type": "object",
-    "properties": {
-        "columns": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "只处理这几列，省略则全部",
-        }
-    },
-}
+# 入参模型：字段说明进 JSON Schema 给模型看，必填与类型由 pydantic 判
+class NoArgs(_Args):
+    pass
+
+
+class ColumnsArgs(_Args):
+    columns: list[str] = Field(default_factory=list, description="只处理这几列，省略则全部")
+
+
+class SqlArgs(_Args):
+    sql: str = Field(description="单条只读 SELECT，不带分号")
+
+
+class SlugArgs(_Args):
+    slug: str = Field(description="技能 slug，从 list_skills 的结果里取")
+
+
+class QueryArgs(_Args):
+    query: str = Field(description="关键词，中文整串即可")
+
+
+class CodeArgs(_Args):
+    code: str = Field(description="只读计算用的 pandas 代码，结果放 result 变量")
+
+
+class McpArgs(_Args):
+    tool: str = Field(description="MCP 工具名，从 /mcp/tools 的结果里取")
+    arguments: dict = Field(default_factory=dict, description="该工具自己的参数对象，没有就留空")
 
 
 def _run_sql(sql: str = "", dataset_id: str = "") -> dict:
@@ -128,18 +160,9 @@ def _detect_anomalies(columns: list | None = None, dataset_id: str = "") -> dict
     return {"table": result["table"], "row_count": result["row_count"], "anomalies": result["anomalies"]}
 
 
-register(
-    "run_sql",
-    _run_sql,
-    {
-        "type": "object",
-        "properties": {"sql": {"type": "string", "description": "单条只读 SELECT，不带分号"}},
-        "required": ["sql"],
-    },
-    "read",
-)
-register("describe_stats", _describe_stats, COLUMNS_ARG, "read")
-register("detect_anomalies", _detect_anomalies, COLUMNS_ARG, "read")
+register("run_sql", _run_sql, SqlArgs, "read")
+register("describe_stats", _describe_stats, ColumnsArgs, "read")
+register("detect_anomalies", _detect_anomalies, ColumnsArgs, "read")
 
 
 def _skills_module():
@@ -161,17 +184,8 @@ def _use_skill(slug: str = "", dataset_id: str = "") -> dict:
 
 
 # 技能与数据集无关，但工具签名统一带 dataset_id 由 agent 注入（§4.2），这两个只是收下不吃
-register("list_skills", _list_skills, {"type": "object", "properties": {}}, "read")
-register(
-    "use_skill",
-    _use_skill,
-    {
-        "type": "object",
-        "properties": {"slug": {"type": "string", "description": "技能 slug，从 list_skills 的结果里取"}},
-        "required": ["slug"],
-    },
-    "read",
-)
+register("list_skills", _list_skills, NoArgs, "read")
+register("use_skill", _use_skill, SlugArgs, "read")
 
 
 def _kb_module():
@@ -187,16 +201,7 @@ def _search_kb(query: str = "", dataset_id: str = "") -> dict:
     return _kb_module().search(query)
 
 
-register(
-    "search_kb",
-    _search_kb,
-    {
-        "type": "object",
-        "properties": {"query": {"type": "string", "description": "关键词，中文整串即可"}},
-        "required": ["query"],
-    },
-    "read",
-)
+register("search_kb", _search_kb, QueryArgs, "read")
 
 
 def _list_metrics(dataset_id: str = "") -> dict:
@@ -218,17 +223,8 @@ def _run_code(code: str = "", dataset_id: str = "") -> dict:
 
 
 # 指标不碰数据集，沙箱自带 dataset_id 注入，两个都按 §4.8 算 read 类
-register("list_metrics", _list_metrics, {"type": "object", "properties": {}}, "read")
-register(
-    "run_code",
-    _run_code,
-    {
-        "type": "object",
-        "properties": {"code": {"type": "string", "description": "只读计算用的 pandas 代码，结果放 result 变量"}},
-        "required": ["code"],
-    },
-    "read",
-)
+register("list_metrics", _list_metrics, NoArgs, "read")
+register("run_code", _run_code, CodeArgs, "read")
 
 
 def _mcp_module():
@@ -246,16 +242,4 @@ def _call_mcp_tool(tool: str = "", arguments: dict | None = None, dataset_id: st
     return _mcp_module().call_tool(tool, arguments or {})
 
 
-register(
-    "call_mcp_tool",
-    _call_mcp_tool,
-    {
-        "type": "object",
-        "properties": {
-            "tool": {"type": "string", "description": "MCP 工具名，从 /mcp/tools 的结果里取"},
-            "arguments": {"type": "object", "description": "该工具自己的参数对象，没有就留空"},
-        },
-        "required": ["tool"],
-    },
-    "read",
-)
+register("call_mcp_tool", _call_mcp_tool, McpArgs, "read")

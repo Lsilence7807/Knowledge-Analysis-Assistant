@@ -259,7 +259,8 @@ def test_disconnect_before_pipeline_records_canceled_and_skips_model(dataset, mo
             await anext(gen)
         return first
 
-    assert "event: plan" in asyncio.run(scenario())
+    # F7：帧由 sse-starlette 的 ServerSentEvent 承载（线上字节与改造前一字不差），生成器里拿到的是对象
+    assert asyncio.run(scenario()).event == "plan"
     assert fake.calls == []
     assert _canceled_rows()
 

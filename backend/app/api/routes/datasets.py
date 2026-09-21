@@ -1,6 +1,6 @@
 # 文件：backend/app/api/routes/datasets.py
 # 作用：数据集端点：上传、列表、画像、删除
-# 阶段：F1 后端骨架（原 app/main.py 的 4 个 /datasets* 端点原样搬来）
+# 阶段：F1 后端骨架（原 app/main.py 的 4 个 /datasets* 端点原样搬来）；F7 上传时记归属（§7）
 # 依赖：fastapi、app/api/deps.py、app/services/{db,ingest,store}.py
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
-from app.api.deps import get_dataset, get_settings
+from app.api.deps import CurrentUser, get_dataset, get_settings
 from app.core import db
 from app.services import ingest, store
 
@@ -17,7 +17,9 @@ router = APIRouter()
 
 
 @router.post("/datasets")
-async def upload_dataset(file: UploadFile = File(...), settings=Depends(get_settings)) -> dict:
+async def upload_dataset(
+    file: UploadFile = File(...), settings=Depends(get_settings), user: CurrentUser = None
+) -> dict:
     """接收文件并返回清洗后的数据集画像。"""
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in ingest.ALLOWED_SUFFIXES:
@@ -29,7 +31,7 @@ async def upload_dataset(file: UploadFile = File(...), settings=Depends(get_sett
     target = settings.DATA_DIR / "files" / f"upload_{uuid4().hex}{suffix}"
     target.write_bytes(content)
     try:
-        return ingest.ingest_file(target, file.filename or target.name)
+        return ingest.ingest_file(target, file.filename or target.name, owner=user or "")
     except ingest.IngestError as exc:
         # 清洗失败就没有数据集指向这个文件，留着只会变孤儿（K-015）
         target.unlink(missing_ok=True)

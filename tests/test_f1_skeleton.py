@@ -8,6 +8,7 @@ from app.main import app
 
 # 改造前 app/main.py 里那 23 个端点的路径与方法；§4.3 的 HTTP 形状是冻结契约，拆文件不许改它
 # F4 加了 5 条会话与缓存路径（23 -> 28 个端点 / 25 条路径），以后新段加端点照样往这张表加一行
+# F7 加了登录与登出（25 -> 27 条路径，P11）
 FROZEN_ROUTES: dict[str, set[str]] = {
     "/ask": {"post"},
     "/ask/stream": {"get"},
@@ -21,6 +22,8 @@ FROZEN_ROUTES: dict[str, set[str]] = {
     "/insight": {"post"},
     "/kb/import": {"post"},
     "/kb/search": {"post"},
+    "/login": {"post"},
+    "/logout": {"post"},
     "/mcp/call": {"post"},
     "/mcp/tools": {"get"},
     "/metrics/definitions": {"get"},

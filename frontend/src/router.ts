@@ -1,6 +1,6 @@
 // 文件：frontend/src/router.ts
-// 作用：路由树与 router 实例（8 页 code-based 路由）；页面外壳在 App.tsx，两者分文件以免 fast refresh 失效
-// 阶段：F2a 前端工程
+// 作用：路由树与 router 实例（9 页 code-based 路由，F7 加登录页）；外壳在 App.tsx，两者分文件以免 fast refresh 失效
+// 阶段：F2a 前端工程；F7 加 /login（P11）
 // 依赖：@tanstack/react-router、src/App.tsx、src/routes/*
 import { createRootRoute, createRoute, createRouter, lazyRouteComponent } from "@tanstack/react-router";
 
@@ -15,6 +15,7 @@ const McpPage = lazyRouteComponent(() => import("@/routes/mcp"), "McpPage");
 const SettingsPage = lazyRouteComponent(() => import("@/routes/settings"), "SettingsPage");
 const EvalsPage = lazyRouteComponent(() => import("@/routes/evals"), "EvalsPage");
 const JobsPage = lazyRouteComponent(() => import("@/routes/jobs"), "JobsPage");
+const LoginPage = lazyRouteComponent(() => import("@/routes/login"), "LoginPage");
 
 const rootRoute = createRootRoute({ component: Shell, pendingComponent: Pending });
 const indexRoute = createRoute({ getParentRoute: () => rootRoute, path: "/", component: HomePage });
@@ -25,6 +26,7 @@ const mcpRoute = createRoute({ getParentRoute: () => rootRoute, path: "/mcp", co
 const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/settings", component: SettingsPage });
 const evalsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/evals", component: EvalsPage });
 const jobsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/jobs", component: JobsPage });
+const loginRoute = createRoute({ getParentRoute: () => rootRoute, path: "/login", component: LoginPage });
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
@@ -35,6 +37,7 @@ const routeTree = rootRoute.addChildren([
   settingsRoute,
   evalsRoute,
   jobsRoute,
+  loginRoute,
 ]);
 
 export const router = createRouter({ routeTree, defaultPendingComponent: Pending });

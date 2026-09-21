@@ -1,20 +1,22 @@
 # 文件：backend/app/services/stream.py
-# 作用：SSE 帧编码与断连判定：/ask/stream 的帧序由 main.py 编排，这里只管拼帧与「客户端还在吗」
-# 阶段：P17 流式输出
-# 依赖：标准库 json、os
+# 作用：SSE 帧与断连判定：帧编码交 sse-starlette（ServerSentEvent），这里只管造帧与「客户端还在吗」
+# 阶段：P17 流式输出；F7 手写分帧换 sse-starlette（帧契约 §4.11 逐字不变）
+# 依赖：sse_starlette、标准库 json、os
 from __future__ import annotations
 
 import json
 import os
 
+from sse_starlette import ServerSentEvent
+
 ENABLED = os.getenv("ENABLE_STREAM", "false").lower() == "true"  # §6：新增能力默认关
-# 反代不许缓存、不许攒包：攒包会把首帧拖到整段结束，SSE 就退化成一次性返回
-SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+# sse-starlette 默认用 \r\n 分行，而帧契约与现有前端按 \n 分帧，这里钉死分隔符
+SEP = "\n"
 
 
-def sse(event: str, data: dict) -> str:
-    """拼一帧 SSE：event + data + 空行收尾；中文不转义，浏览器直接读。"""
-    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False, default=str)}\n\n"
+def sse(event: str, data: dict) -> ServerSentEvent:
+    """造一帧 SSE：事件名 + JSON data；中文不转义，编码与分帧交给 sse-starlette。"""
+    return ServerSentEvent(event=event, data=json.dumps(data, ensure_ascii=False, default=str), sep=SEP)
 
 
 def canceled(request) -> bool:
