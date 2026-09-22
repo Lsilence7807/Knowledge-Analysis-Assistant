@@ -1,8 +1,8 @@
 /* 文件：frontend/src/index.css
    作用：Tailwind v4 入口、P5.1 配色变量（:root）与 shadcn/ui 语义 token 的同名映射
-   阶段：F2a 前端工程
+   阶段：F2a 前端工程；P5.3 视觉风格 v2 加字体栈与小件硬阴影
    依赖：tailwindcss（v4，经 @tailwindcss/vite）、tw-animate-css
-   说明：配色只有一份来源——P5.1 的 :root 变量；下面的 shadcn token 全部指过去，改主色只改那几行 */
+   说明：配色与字体只有一份来源——P5.1 的 :root 变量；下面的 shadcn token 全部指过去，改主色只改那几行 */
 @import "tailwindcss";
 @import "tw-animate-css";
 
@@ -11,8 +11,13 @@
   --paper: #FFF7E8; --card: #FFFDF8; --ink: #17130E; --ink-soft: #443C31;
   --violet: #6B4BF6; --violet-dark: #5433D6; --yellow: #FFD34D; --coral: #FF6A54; --mint: #2F9E5F;
   --hair: #E7DFCE; --radius: 16px; --stroke: 3px; --pad: 18px; --shadow: 6px 6px 0 var(--ink);
+  /* P5.3：胶囊、贴纸、按钮这类小件用 6px 硬阴影太沉，另开一档 */
+  --shadow-sm: 3px 3px 0 var(--ink);
   /* P5.1 的 --muted 是「次要文字灰」，shadcn 的同名 token 是「浅底」，同名不同义，故这里改名避让 */
   --muted-text: #6E6455;
+  /* P5.3 字体栈：拉丁先取 Windows 屏显变体字体，中文回落雅黑 UI；不引外部字体，离线也能跑
+     ponytail: 要换品牌字体就自托管 woff2 到 frontend/public/fonts/，再只改这一行 */
+  --font-stack: "Segoe UI Variable Display", "Segoe UI", system-ui, "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
 
   /* --- shadcn/ui 语义 token：全部指向上面的 P5.1 变量，组件不再引入第二套配色 --- */
   --background: var(--paper);
@@ -73,7 +78,8 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
   --shadow-hard: var(--shadow);
-  --font-sans: system-ui, "Microsoft YaHei", sans-serif;
+  --shadow-hard-sm: var(--shadow-sm);
+  --font-sans: var(--font-stack);
 }
 
 @layer base {
@@ -83,7 +89,23 @@
     background-image: radial-gradient(var(--hair) 1.2px, transparent 1.2px);
     background-size: 24px 24px;
     color: var(--ink);
-    font-family: system-ui, "Microsoft YaHei", sans-serif;
+    font-family: var(--font-stack);
     -webkit-font-smoothing: antialiased;
+  }
+
+  /* P5.3：原生文件选择框默认是浏览器蓝，一处规则让它跟着旋钮走（全站 file 输入都吃这条） */
+  input[type="file"] {
+    color: var(--muted-text);
+    font-size: 0.875rem;
+  }
+  input[type="file"]::file-selector-button {
+    margin-right: 10px;
+    padding: 5px 14px;
+    border: var(--stroke) solid var(--ink);
+    border-radius: 999px;
+    background: var(--violet);
+    color: #ffffff;
+    font-weight: 700;
+    cursor: pointer;
   }
 }

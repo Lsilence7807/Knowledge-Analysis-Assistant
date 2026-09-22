@@ -1,9 +1,10 @@
 // 文件：frontend/src/routes/login.tsx
 // 作用：登录页（P11）：公开端开着认证时，没有 cookie 的请求都会被 401 顶回来，这一页负责换一张
-// 阶段：F7 守卫与认证（兼 P11）
-// 依赖：react、src/components/ui/{button,card,input,label}.tsx、src/lib/apiClient.ts
+// 阶段：F7 守卫与认证（兼 P11）；P5.3 视觉风格 v2 加插画与装饰层
+// 依赖：react、src/components/decor.tsx、src/components/ui/{button,card,input,label}.tsx、src/lib/apiClient.ts
 import { useState } from "react";
 
+import { Eyebrow, Illustration, Sticker } from "@/components/decor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -30,10 +31,19 @@ export function LoginPage() {
   }
 
   return (
-    <div className="mx-auto mt-10 max-w-[420px]">
-      <Card className="border-[3px] border-ink shadow-hard">
+    <div className="mx-auto mt-6 max-w-[440px] space-y-5">
+      <div className="flex items-end justify-center gap-5">
+        <Illustration name="welcome-key" alt="钥匙与锁的插画：口令保护" className="w-[132px]" />
+        <Sticker tone="coral" className="rotate-[7deg]">
+          需要
+          <br />
+          口令
+        </Sticker>
+      </div>
+      <Card>
         <CardHeader>
-          <CardTitle className="text-base">登录</CardTitle>
+          <Eyebrow>公开部署认证</Eyebrow>
+          <CardTitle className="text-lg font-extrabold">登录</CardTitle>
           <CardDescription>公开部署开了单密码认证；本地自用（AUTH_DISABLED=true）不会看到这一页。</CardDescription>
         </CardHeader>
         <CardContent>
