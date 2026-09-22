@@ -77,3 +77,17 @@ def test_pages_use_the_decor_layer_and_assets_exist():
     for asset in sorted(used):
         # 插画名写错在页面上只是裂图、不报错，所以这里钉住每个引用都真的存在
         assert (ILLUSTRATIONS / (asset + ".svg")).is_file(), asset
+
+
+def test_orientation_variants_spell_out_the_radix_attribute():
+    # K-057：Radix 给的是 data-orientation="horizontal"，Tailwind 的 `data-horizontal:` 只匹配「属性存在」，
+    # 于是页签条一类没匹配上、被撑成 332px 竖排。变体一律写全，禁止简写。
+    offenders = []
+    for path in sorted(SRC.rglob("*.ts*")):
+        text = path.read_text(encoding="utf-8")
+        for bad in ("data-horizontal:", "data-vertical:"):
+            if bad in text:
+                offenders.append(path.relative_to(SRC).as_posix() + ": " + bad)
+    assert not offenders, offenders
+    tabs = (SRC / "components" / "ui" / "tabs.tsx").read_text(encoding="utf-8")
+    assert "group-data-[orientation=horizontal]/tabs:h-8" in tabs
